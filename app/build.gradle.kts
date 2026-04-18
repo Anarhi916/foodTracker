@@ -29,6 +29,11 @@ android {
             "GEMINI_API_KEY",
             "\"${localProperties.getProperty("gemini.api.key", "")}\""
         )
+        buildConfigField(
+            "String",
+            "OPENROUTER_API_KEY",
+            "\"${localProperties.getProperty("openrouter.api.key", "")}\""
+        )
     }
 
     buildTypes {

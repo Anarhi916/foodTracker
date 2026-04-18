@@ -15,6 +15,12 @@ data class OFFProduct(
     val nutriments: OFFNutriments? = null
 )
 
+// Search response models
+data class OFFSearchResponse(
+    val count: Int? = null,
+    val products: List<OFFProduct>? = null
+)
+
 data class OFFNutriments(
     @SerializedName("energy-kcal_100g") val energyKcal100g: Double? = null,
     @SerializedName("proteins_100g") val proteins100g: Double? = null,

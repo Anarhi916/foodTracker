@@ -71,14 +71,33 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             try {
-                val result = repo.analyzeFoodText(input)
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    pendingFood = result,
-                    pendingFoodWeight = extractWeight(input),
-                    pendingFoodSource = "manual",
-                    showConfirmDialog = true
-                )
+                val results = repo.analyzeFoodText(input)
+                if (results.size == 1) {
+                    // Single food — show confirm dialog
+                    val result = results.first()
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        pendingFood = result,
+                        pendingFoodWeight = if (result.weightGrams > 0) result.weightGrams else extractWeight(input),
+                        pendingFoodSource = "manual",
+                        showConfirmDialog = true
+                    )
+                } else {
+                    // Multiple foods — add all directly
+                    for (result in results) {
+                        val weight = if (result.weightGrams > 0) result.weightGrams else 100.0
+                        repo.addFoodEntry(
+                            foodName = result.foodName,
+                            weightGrams = weight,
+                            nutrients = result.nutrients,
+                            source = "manual"
+                        )
+                    }
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        foodInput = ""
+                    )
+                }
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
@@ -210,7 +229,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     pendingFood = result,
-                    pendingFoodWeight = result.nutrients.calories.let { if (it > 0) 0.0 else 0.0 },
+                    pendingFoodWeight = if (result.weightGrams > 0) result.weightGrams else 0.0,
                     pendingFoodSource = "photo",
                     showConfirmDialog = true
                 )

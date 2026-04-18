@@ -28,6 +28,29 @@ object ApiClient {
             .create(GeminiApiService::class.java)
     }
 
+    val openRouterApi: OpenRouterApiService by lazy {
+        Retrofit.Builder()
+            .baseUrl("https://openrouter.ai/")
+            .client(okHttpClient)
+            .addConverterFactory(GsonConverterFactory.create(gson))
+            .build()
+            .create(OpenRouterApiService::class.java)
+    }
+
+    val usdaApi: UsdaFdcApiService by lazy {
+        Retrofit.Builder()
+            .baseUrl("https://api.nal.usda.gov/")
+            .client(
+                OkHttpClient.Builder()
+                    .connectTimeout(15, TimeUnit.SECONDS)
+                    .readTimeout(15, TimeUnit.SECONDS)
+                    .build()
+            )
+            .addConverterFactory(GsonConverterFactory.create(gson))
+            .build()
+            .create(UsdaFdcApiService::class.java)
+    }
+
     val openFoodFactsApi: OpenFoodFactsApiService by lazy {
         Retrofit.Builder()
             .baseUrl("https://world.openfoodfacts.org/")

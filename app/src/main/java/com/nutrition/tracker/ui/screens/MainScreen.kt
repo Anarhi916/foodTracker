@@ -133,6 +133,13 @@ fun MainScreen(
                             onDelete = { viewModel.deleteEntry(entry) }
                         )
                     }
+
+                    item {
+                        FoodEntriesTotalsRow(
+                            totalWeight = entries.sumOf { it.weightGrams },
+                            totals = totals
+                        )
+                    }
                 }
 
                 // Macros progress

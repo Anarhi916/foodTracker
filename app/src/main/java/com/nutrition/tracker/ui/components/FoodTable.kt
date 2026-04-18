@@ -152,3 +152,61 @@ fun FoodEntryRow(
         }
     }
 }
+
+@Composable
+fun FoodEntriesTotalsRow(
+    totalWeight: Double,
+    totals: NutrientData
+) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer
+        ),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "Итого",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(2.5f)
+            )
+            Text(
+                "${totalWeight.toInt()}г",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                "%.0f".format(totals.calories),
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                "%.1f".format(totals.protein),
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(0.7f)
+            )
+            Text(
+                "%.1f".format(totals.fat),
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(0.7f)
+            )
+            Text(
+                "%.1f".format(totals.carbs),
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(0.7f)
+            )
+            Spacer(Modifier.width(72.dp)) // space matching buttons column
+        }
+    }
+}
