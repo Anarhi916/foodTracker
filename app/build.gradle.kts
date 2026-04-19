@@ -17,6 +17,15 @@ android {
     namespace = "com.nutrition.tracker"
     compileSdk = 35
 
+    signingConfigs {
+        create("release") {
+            storeFile = file(System.getProperty("user.home") + "/nutrition-release.jks")
+            storePassword = "ccn748463"
+            keyAlias = "nutrition"
+            keyPassword = "ccn748463"
+        }
+    }
+
     defaultConfig {
         applicationId = "com.nutrition.tracker"
         minSdk = 26
@@ -39,6 +48,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

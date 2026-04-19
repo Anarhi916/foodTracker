@@ -139,6 +139,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { repo.deleteFoodEntry(entry) }
     }
 
+    fun updateMultipleWeights(changes: Map<Long, Double>) {
+        viewModelScope.launch {
+            for ((id, weight) in changes) {
+                repo.updateFoodEntryWeight(id, weight)
+            }
+        }
+    }
+
     fun showEditWeightDialog(entry: FoodEntryEntity) {
         _uiState.value = _uiState.value.copy(
             showEditDialog = true,
@@ -265,12 +273,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return match?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0
     }
 
-    fun updateProfile(gender: String, weight: Double, height: Double, goals: String, onComplete: () -> Unit) {
+    fun updateProfile(gender: String, age: Int, weight: Double, height: Double, goals: String, onComplete: () -> Unit) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             try {
-                repo.saveUserProfile(gender, weight, height, goals)
-                repo.calculateAndSaveNorms(gender, weight, height, goals)
+                repo.saveUserProfile(gender, age, weight, height, goals)
+                repo.calculateAndSaveNorms(gender, age, weight, height, goals)
                 _uiState.value = _uiState.value.copy(isLoading = false)
                 onComplete()
             } catch (e: Exception) {

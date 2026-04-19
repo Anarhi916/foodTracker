@@ -81,6 +81,16 @@ fun OnboardingScreen(
                     }
                 }
 
+                // Age
+                OutlinedTextField(
+                    value = uiState.age,
+                    onValueChange = { viewModel.updateAge(it) },
+                    label = { Text("Возраст (лет)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
                 // Weight
                 OutlinedTextField(
                     value = uiState.weight,

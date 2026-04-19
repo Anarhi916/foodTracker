@@ -138,6 +138,40 @@ data class NutrientData(
         "Йод (мкг)" to iodine,
         "Хром (мкг)" to chromium
     )
+
+    fun getByKey(key: String): Double = when (key) {
+        "calories" -> calories
+        "protein" -> protein
+        "fat" -> fat
+        "carbs" -> carbs
+        "fiber" -> fiber
+        "vitaminA" -> vitaminA
+        "vitaminB1" -> vitaminB1
+        "vitaminB2" -> vitaminB2
+        "vitaminB3" -> vitaminB3
+        "vitaminB5" -> vitaminB5
+        "vitaminB6" -> vitaminB6
+        "vitaminB7" -> vitaminB7
+        "vitaminB9" -> vitaminB9
+        "vitaminB12" -> vitaminB12
+        "vitaminC" -> vitaminC
+        "vitaminD" -> vitaminD
+        "vitaminE" -> vitaminE
+        "vitaminK" -> vitaminK
+        "calcium" -> calcium
+        "iron" -> iron
+        "magnesium" -> magnesium
+        "phosphorus" -> phosphorus
+        "potassium" -> potassium
+        "sodium" -> sodium
+        "zinc" -> zinc
+        "copper" -> copper
+        "manganese" -> manganese
+        "selenium" -> selenium
+        "iodine" -> iodine
+        "chromium" -> chromium
+        else -> 0.0
+    }
 }
 
 data class FoodAnalysisResult(

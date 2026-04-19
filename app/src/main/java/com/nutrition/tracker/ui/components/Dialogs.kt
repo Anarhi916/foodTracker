@@ -1,13 +1,17 @@
 package com.nutrition.tracker.ui.components
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.nutrition.tracker.data.db.FoodEntryEntity
 import com.nutrition.tracker.data.model.NutrientData
 
 @Composable
@@ -23,7 +27,10 @@ fun FoodConfirmationDialog(
             Text("Подтвердить добавление", fontWeight = FontWeight.Bold)
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
                 Text(
                     text = foodName,
                     style = MaterialTheme.typography.titleMedium,
@@ -138,4 +145,112 @@ private fun NutrientRow(name: String, value: String) {
         Text(name, style = MaterialTheme.typography.bodySmall)
         Text(value, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
     }
+}
+
+@Composable
+fun NutrientBreakdownDialog(
+    nutrientName: String,
+    nutrientKey: String,
+    entries: List<FoodEntryEntity>,
+    parseNutrients: (String) -> NutrientData,
+    onDismiss: () -> Unit
+) {
+    val items = entries.map { entry ->
+        val nutrients = parseNutrients(entry.nutrientsJson)
+        Triple(entry.foodName, entry.weightGrams, nutrients.getByKey(nutrientKey))
+    }.filter { it.third > 0.0 }
+
+    val total = items.sumOf { it.third }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(nutrientName, fontWeight = FontWeight.Bold)
+        },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                if (items.isEmpty()) {
+                    Text("Нет данных", style = MaterialTheme.typography.bodyMedium)
+                } else {
+                    // Header
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            "Продукт",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            "Кол-во",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.width(60.dp)
+                        )
+                        Text(
+                            "%",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.width(45.dp)
+                        )
+                    }
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                    items.sortedByDescending { it.third }.forEach { (name, weight, value) ->
+                        val pct = if (total > 0) (value / total * 100).toInt() else 0
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
+                        ) {
+                            Text(
+                                "$name (${weight.toInt()}г)",
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                "%.2f".format(value),
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium,
+                                modifier = Modifier.width(60.dp)
+                            )
+                            Text(
+                                "$pct%",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium,
+                                modifier = Modifier.width(45.dp)
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            "Итого",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            "%.2f".format(total),
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.width(60.dp)
+                        )
+                        Text(
+                            "100%",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.width(45.dp)
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Закрыть") }
+        }
+    )
 }

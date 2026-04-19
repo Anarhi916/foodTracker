@@ -1,9 +1,7 @@
 package com.nutrition.tracker.ui.screens
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -11,6 +9,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nutrition.tracker.data.db.FoodEntryEntity
 import com.nutrition.tracker.data.model.NutrientData
 import com.nutrition.tracker.ui.components.*
@@ -25,10 +24,10 @@ fun MainScreen(
     onNavigateToHistory: () -> Unit,
     onNavigateToEditProfile: () -> Unit
 ) {
-    val uiState by viewModel.uiState.collectAsState()
-    val entries by viewModel.todayEntries.collectAsState()
-    val norms by viewModel.dailyNorms.collectAsState()
-    val totals by viewModel.todayTotals.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val entries by viewModel.todayEntries.collectAsStateWithLifecycle()
+    val norms by viewModel.dailyNorms.collectAsStateWithLifecycle()
+    val totals by viewModel.todayTotals.collectAsStateWithLifecycle()
 
     var vitaminsExpanded by remember { mutableStateOf(false) }
     var mineralsExpanded by remember { mutableStateOf(false) }
@@ -131,22 +130,12 @@ fun MainScreen(
                     }
 
                     item {
-                        FoodEntriesHeader()
-                    }
-
-                    items(entries, key = { it.id }) { entry ->
-                        FoodEntryRow(
-                            entry = entry,
-                            nutrients = viewModel.parseNutrients(entry.nutrientsJson),
-                            onEdit = { viewModel.showEditWeightDialog(entry) },
-                            onDelete = { viewModel.deleteEntry(entry) }
-                        )
-                    }
-
-                    item {
-                        FoodEntriesTotalsRow(
-                            totalWeight = entries.sumOf { it.weightGrams },
-                            totals = totals
+                        FoodEntriesTable(
+                            entries = entries,
+                            totals = totals,
+                            parseNutrients = { viewModel.parseNutrients(it) },
+                            onSaveWeights = { changes -> viewModel.updateMultipleWeights(changes) },
+                            onDelete = { viewModel.deleteEntry(it) }
                         )
                     }
                 }
@@ -162,7 +151,11 @@ fun MainScreen(
                     }
 
                     item {
-                        MacrosProgressSection(totals = totals, norms = norms!!)
+                        MacrosProgressSection(
+                            totals = totals, norms = norms!!,
+                            entries = entries,
+                            parseNutrients = { viewModel.parseNutrients(it) }
+                        )
                     }
 
                     // Vitamins
@@ -176,7 +169,11 @@ fun MainScreen(
 
                     if (vitaminsExpanded) {
                         item {
-                            VitaminsProgressSection(totals = totals, norms = norms!!)
+                            VitaminsProgressSection(
+                                totals = totals, norms = norms!!,
+                                entries = entries,
+                                parseNutrients = { viewModel.parseNutrients(it) }
+                            )
                         }
                     }
 
@@ -191,7 +188,11 @@ fun MainScreen(
 
                     if (mineralsExpanded) {
                         item {
-                            MineralsProgressSection(totals = totals, norms = norms!!)
+                            MineralsProgressSection(
+                                totals = totals, norms = norms!!,
+                                entries = entries,
+                                parseNutrients = { viewModel.parseNutrients(it) }
+                            )
                         }
                     }
                 }

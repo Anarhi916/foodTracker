@@ -46,21 +46,22 @@ class NutritionRepository(
     // --- User Profile ---
     fun getUserProfile(): Flow<UserProfileEntity?> = db.userProfileDao().getProfile()
 
-    suspend fun saveUserProfile(gender: String, weight: Double, height: Double, goals: String) {
+    suspend fun saveUserProfile(gender: String, age: Int, weight: Double, height: Double, goals: String) {
         db.userProfileDao().insert(
-            UserProfileEntity(gender = gender, weightKg = weight, heightCm = height, goalsText = goals)
+            UserProfileEntity(gender = gender, age = age, weightKg = weight, heightCm = height, goalsText = goals)
         )
     }
 
     // --- Daily Norms ---
     fun getDailyNorms(): Flow<DailyNormsEntity?> = db.dailyNormsDao().getNorms()
 
-    suspend fun calculateAndSaveNorms(gender: String, weight: Double, height: Double, goals: String): NutrientData {
+    suspend fun calculateAndSaveNorms(gender: String, age: Int, weight: Double, height: Double, goals: String): NutrientData {
         val prompt = """
 You are a professional nutrition expert. Based on the following user data, calculate the recommended DAILY nutritional intake to achieve their goals.
 
 User data:
 - Gender: $gender
+- Age: $age years
 - Weight: $weight kg
 - Height: $height cm
 - Goals and activity level: $goals

@@ -27,6 +27,7 @@ fun EditProfileScreen(
     val uiState by viewModel.uiState.collectAsState()
 
     var gender by remember { mutableStateOf("Мужской") }
+    var age by remember { mutableStateOf("") }
     var weight by remember { mutableStateOf("") }
     var height by remember { mutableStateOf("") }
     var goalsText by remember { mutableStateOf("") }
@@ -36,6 +37,7 @@ fun EditProfileScreen(
     LaunchedEffect(profile) {
         if (!initialized && profile != null) {
             gender = profile!!.gender
+            age = profile!!.age.toString()
             weight = profile!!.weightKg.toInt().toString()
             height = profile!!.heightCm.toInt().toString()
             goalsText = profile!!.goalsText
@@ -91,6 +93,16 @@ fun EditProfileScreen(
                 }
             }
 
+            // Age
+            OutlinedTextField(
+                value = age,
+                onValueChange = { age = it },
+                label = { Text("Возраст (лет)") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+
             // Weight
             OutlinedTextField(
                 value = weight,
@@ -145,10 +157,11 @@ fun EditProfileScreen(
             // Submit
             Button(
                 onClick = {
+                    val a = age.toIntOrNull()
                     val w = weight.toDoubleOrNull()
                     val h = height.toDoubleOrNull()
-                    if (w == null || h == null) {
-                        localError = "Введите корректные вес и рост"
+                    if (a == null || w == null || h == null) {
+                        localError = "Введите корректные возраст, вес и рост"
                         return@Button
                     }
                     if (goalsText.isBlank()) {
@@ -156,7 +169,7 @@ fun EditProfileScreen(
                         return@Button
                     }
                     localError = null
-                    viewModel.updateProfile(gender, w, h, goalsText, onComplete = onBack)
+                    viewModel.updateProfile(gender, a, w, h, goalsText, onComplete = onBack)
                 },
                 enabled = !uiState.isLoading,
                 modifier = Modifier

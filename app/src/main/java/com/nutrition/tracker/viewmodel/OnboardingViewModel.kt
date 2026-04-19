@@ -10,6 +10,7 @@ import kotlinx.coroutines.launch
 
 data class OnboardingUiState(
     val gender: String = "Мужской",
+    val age: String = "",
     val weight: String = "",
     val height: String = "",
     val goalsText: String = "",
@@ -28,6 +29,10 @@ class OnboardingViewModel(application: Application) : AndroidViewModel(applicati
         _uiState.value = _uiState.value.copy(gender = gender)
     }
 
+    fun updateAge(age: String) {
+        _uiState.value = _uiState.value.copy(age = age)
+    }
+
     fun updateWeight(weight: String) {
         _uiState.value = _uiState.value.copy(weight = weight)
     }
@@ -42,10 +47,11 @@ class OnboardingViewModel(application: Application) : AndroidViewModel(applicati
 
     fun submit() {
         val state = _uiState.value
+        val age = state.age.toIntOrNull()
         val weight = state.weight.toDoubleOrNull()
         val height = state.height.toDoubleOrNull()
-        if (weight == null || height == null) {
-            _uiState.value = state.copy(error = "Введите корректные вес и рост")
+        if (age == null || weight == null || height == null) {
+            _uiState.value = state.copy(error = "Введите корректные возраст, вес и рост")
             return
         }
         if (state.goalsText.isBlank()) {
@@ -56,8 +62,8 @@ class OnboardingViewModel(application: Application) : AndroidViewModel(applicati
         viewModelScope.launch {
             _uiState.value = state.copy(isLoading = true, error = null)
             try {
-                repo.saveUserProfile(state.gender, weight, height, state.goalsText)
-                repo.calculateAndSaveNorms(state.gender, weight, height, state.goalsText)
+                repo.saveUserProfile(state.gender, age, weight, height, state.goalsText)
+                repo.calculateAndSaveNorms(state.gender, age, weight, height, state.goalsText)
                 _uiState.value = _uiState.value.copy(isLoading = false, isComplete = true)
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
