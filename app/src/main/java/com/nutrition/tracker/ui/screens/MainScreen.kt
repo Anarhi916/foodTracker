@@ -22,7 +22,8 @@ fun MainScreen(
     viewModel: MainViewModel,
     onNavigateToScanner: () -> Unit,
     onNavigateToCamera: () -> Unit,
-    onNavigateToHistory: () -> Unit
+    onNavigateToHistory: () -> Unit,
+    onNavigateToEditProfile: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val entries by viewModel.todayEntries.collectAsState()
@@ -82,6 +83,13 @@ fun MainScreen(
                     titleContentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 actions = {
+                    IconButton(onClick = onNavigateToEditProfile) {
+                        Icon(
+                            Icons.Default.Person,
+                            contentDescription = "Профиль",
+                            tint = MaterialTheme.colorScheme.onPrimary
+                        )
+                    }
                     IconButton(onClick = onNavigateToHistory) {
                         Icon(
                             Icons.Default.History,

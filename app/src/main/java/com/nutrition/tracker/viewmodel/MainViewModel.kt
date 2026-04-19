@@ -7,6 +7,7 @@ import com.nutrition.tracker.NutritionApp
 import com.nutrition.tracker.data.db.FoodEntryEntity
 import com.nutrition.tracker.data.model.FoodAnalysisResult
 import com.nutrition.tracker.data.model.NutrientData
+import com.nutrition.tracker.data.db.UserProfileEntity
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -46,6 +47,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     val hasProfile: StateFlow<Boolean?> = repo.getUserProfile()
         .map { it != null }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val userProfile: StateFlow<UserProfileEntity?> = repo.getUserProfile()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val todayTotals: StateFlow<NutrientData> = todayEntries.map { entries ->
@@ -259,5 +263,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val regex = Regex("""(\d+)\s*(г|гр|грамм|g|ml|мл)""", RegexOption.IGNORE_CASE)
         val match = regex.find(text)
         return match?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0
+    }
+
+    fun updateProfile(gender: String, weight: Double, height: Double, goals: String, onComplete: () -> Unit) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+            try {
+                repo.saveUserProfile(gender, weight, height, goals)
+                repo.calculateAndSaveNorms(gender, weight, height, goals)
+                _uiState.value = _uiState.value.copy(isLoading = false)
+                onComplete()
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "Ошибка обновления профиля: ${e.message}"
+                )
+            }
+        }
     }
 }

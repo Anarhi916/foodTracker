@@ -79,6 +79,9 @@ fun NutritionTrackerApp() {
                 },
                 onNavigateToHistory = {
                     navController.navigate(Screen.History.route)
+                },
+                onNavigateToEditProfile = {
+                    navController.navigate(Screen.EditProfile.route)
                 }
             )
         }
@@ -104,6 +107,13 @@ fun NutritionTrackerApp() {
                 onPhotoTaken = { bytes ->
                     mainViewModel.analyzePhoto(bytes)
                 },
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.EditProfile.route) {
+            EditProfileScreen(
+                viewModel = mainViewModel,
                 onBack = { navController.popBackStack() }
             )
         }

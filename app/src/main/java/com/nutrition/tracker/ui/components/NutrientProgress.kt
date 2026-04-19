@@ -30,6 +30,7 @@ fun NutrientProgressBar(
 
     val ratio = (current / target).coerceIn(0.0, 1.5)
     val progress = (current / target).coerceIn(0.0, 1.0).toFloat()
+    val percent = (current / target * 100).toInt()
     val color = when {
         ratio > 1.1 -> ProgressRed
         ratio > 0.8 -> ProgressGreen
@@ -43,7 +44,7 @@ fun NutrientProgressBar(
         ) {
             Text(name, style = MaterialTheme.typography.bodySmall)
             Text(
-                "${"%.1f".format(current)} / ${"%.1f".format(target)} $unit",
+                "${"%.1f".format(current)} / ${"%.1f".format(target)} $unit ($percent%)",
                 style = MaterialTheme.typography.bodySmall,
                 fontWeight = FontWeight.Medium
             )
