@@ -52,14 +52,15 @@ fun MainScreen(
         )
     }
 
-    // Barcode weight dialog
+    // Barcode/photo weight dialog
     if (uiState.showBarcodeWeightDialog) {
         BarcodeWeightDialog(
             productName = uiState.barcodeProductName ?: "",
             weight = uiState.barcodeWeight,
             onWeightChange = { viewModel.updateBarcodeWeight(it) },
             onConfirm = { viewModel.confirmBarcodeAdd() },
-            onDismiss = { viewModel.dismissBarcodeDialog() }
+            onDismiss = { viewModel.dismissBarcodeDialog() },
+            title = if (uiState.weightDialogSource == "photo") "Распознано по фото" else "Найден продукт"
         )
     }
 

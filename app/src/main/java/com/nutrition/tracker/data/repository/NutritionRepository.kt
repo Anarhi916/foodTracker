@@ -341,21 +341,22 @@ Return ONLY JSON, e.g.: {"vitamin_a": 720, "vitamin_d": 9}
     suspend fun analyzeFoodPhoto(imageBytes: ByteArray): FoodAnalysisResult {
         val base64 = Base64.encodeToString(imageBytes, Base64.NO_WRAP)
         val prompt = """
-Ты профессиональный диетолог. Проанализируй фото еды. Определи продукты, оцени размер порции и пищевую ценность.
+Ты профессиональный диетолог. Проанализируй фото еды. Определи продукты и оцени размер порции.
 Название еды напиши НА РУССКОМ языке. Оцени общий вес порции в граммах.
+Все нутриенты укажи В РАСЧЁТЕ НА 100 ГРАММОВ продукта.
 
 Верни ТОЛЬКО JSON объект с ТОЧНО такой структурой:
 {
   "food_name": "<описание еды НА РУССКОМ>",
-  "weight_grams": <общий вес порции в граммах>,
+  "weight_grams": <оценка общего веса порции в граммах>,
   "nutrients": {
-    "calories": <number>, "protein": <grams>, "fat": <grams>, "carbs": <grams>, "fiber": <grams>,
-    "vitamin_a": <mcg>, "vitamin_b1": <mg>, "vitamin_b2": <mg>, "vitamin_b3": <mg>,
-    "vitamin_b5": <mg>, "vitamin_b6": <mg>, "vitamin_b7": <mcg>, "vitamin_b9": <mcg>,
-    "vitamin_b12": <mcg>, "vitamin_c": <mg>, "vitamin_d": <mcg>, "vitamin_e": <mg>,
-    "vitamin_k": <mcg>, "calcium": <mg>, "iron": <mg>, "magnesium": <mg>,
-    "phosphorus": <mg>, "potassium": <mg>, "sodium": <mg>, "zinc": <mg>,
-    "copper": <mg>, "manganese": <mg>, "selenium": <mcg>, "iodine": <mcg>, "chromium": <mcg>
+    "calories": <на 100г>, "protein": <на 100г>, "fat": <на 100г>, "carbs": <на 100г>, "fiber": <на 100г>,
+    "vitamin_a": <mcg на 100г>, "vitamin_b1": <mg на 100г>, "vitamin_b2": <mg на 100г>, "vitamin_b3": <mg на 100г>,
+    "vitamin_b5": <mg на 100г>, "vitamin_b6": <mg на 100г>, "vitamin_b7": <mcg на 100г>, "vitamin_b9": <mcg на 100г>,
+    "vitamin_b12": <mcg на 100г>, "vitamin_c": <mg на 100г>, "vitamin_d": <mcg на 100г>, "vitamin_e": <mg на 100г>,
+    "vitamin_k": <mcg на 100г>, "calcium": <mg на 100г>, "iron": <mg на 100г>, "magnesium": <mg на 100г>,
+    "phosphorus": <mg на 100г>, "potassium": <mg на 100г>, "sodium": <mg на 100г>, "zinc": <mg на 100г>,
+    "copper": <mg на 100г>, "manganese": <mg на 100г>, "selenium": <mcg на 100г>, "iodine": <mcg на 100г>, "chromium": <mcg на 100г>
   }
 }
 """.trimIndent()

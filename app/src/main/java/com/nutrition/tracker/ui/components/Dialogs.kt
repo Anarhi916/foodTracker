@@ -97,11 +97,12 @@ fun BarcodeWeightDialog(
     weight: String,
     onWeightChange: (String) -> Unit,
     onConfirm: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    title: String = "Найден продукт"
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Найден продукт") },
+        title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(

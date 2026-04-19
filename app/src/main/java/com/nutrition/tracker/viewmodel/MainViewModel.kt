@@ -25,6 +25,7 @@ data class MainUiState(
     val barcodeNutrientsPer100g: NutrientData? = null,
     val showBarcodeWeightDialog: Boolean = false,
     val barcodeWeight: String = "",
+    val weightDialogSource: String = "barcode",
     val photoBytes: ByteArray? = null
 )
 
@@ -203,7 +204,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val nutrients = per100g * factor
 
         viewModelScope.launch {
-            repo.addFoodEntry(name, weight, nutrients, "barcode")
+            repo.addFoodEntry(name, weight, nutrients, state.weightDialogSource)
             _uiState.value = _uiState.value.copy(
                 showBarcodeWeightDialog = false,
                 barcodeProductName = null,
@@ -226,12 +227,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             try {
                 val result = repo.analyzeFoodPhoto(imageBytes)
+                val estimatedWeight = if (result.weightGrams > 0) result.weightGrams.toInt().toString() else "100"
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    pendingFood = result,
-                    pendingFoodWeight = if (result.weightGrams > 0) result.weightGrams else 0.0,
-                    pendingFoodSource = "photo",
-                    showConfirmDialog = true
+                    barcodeProductName = result.foodName,
+                    barcodeNutrientsPer100g = result.nutrients,
+                    showBarcodeWeightDialog = true,
+                    barcodeWeight = estimatedWeight,
+                    weightDialogSource = "photo"
                 )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
