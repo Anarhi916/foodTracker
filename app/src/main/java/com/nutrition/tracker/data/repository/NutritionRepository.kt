@@ -156,27 +156,38 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
             throw Exception("Не удалось распознать продукты из описания")
         }
 
-        // Step 2: For each food, look up USDA or fall back to AI
-        val results = mutableListOf<FoodAnalysisResult>()
-        for (id in identities) {
-            val weight = if (id.weightGrams > 0) id.weightGrams else 100.0
-            val foodNameEn = id.foodNameEn.ifBlank { id.foodName }
-            val foodNameRu = id.foodName.ifBlank { foodDescription }
+        // Step 2: USDA lookup for each food (REST calls, no AI)
+        data class PendingFood(
+            val foodNameRu: String,
+            val foodNameEn: String,
+            val weight: Double,
+            var usdaNutrients: NutrientData? = null
+        )
 
-            Log.d("Repository", "Processing: '$foodNameRu' / '$foodNameEn', weight=${weight}g")
+        val pending = identities.map { id ->
+            PendingFood(
+                foodNameRu = id.foodName.ifBlank { foodDescription },
+                foodNameEn = id.foodNameEn.ifBlank { id.foodName },
+                weight = if (id.weightGrams > 0) id.weightGrams else 100.0
+            )
+        }
 
-            var dbNutrients: NutrientData? = null
+        for ((idx, item) in pending.withIndex()) {
+            Log.d("Repository", "Processing: '${item.foodNameRu}' / '${item.foodNameEn}', weight=${item.weight}g")
             try {
-                val usdaResult = usdaApi.searchFoods(query = foodNameEn)
-                val food = usdaResult.foods?.firstOrNull()
+                val usdaResult = usdaApi.searchFoods(query = item.foodNameEn)
+                // Pick best USDA result: prefer one with calories > 0
+                val food = usdaResult.foods?.firstOrNull { f ->
+                    f.foodNutrients?.any { it.nutrientId == UsdaFoodNutrient.ENERGY && (it.value ?: 0.0) > 0 } == true
+                } ?: usdaResult.foods?.firstOrNull()
                 if (food?.foodNutrients != null) {
                     val nMap = mutableMapOf<Int, Double>()
                     for (fn in food.foodNutrients) {
                         if (fn.nutrientId != null && fn.value != null) nMap[fn.nutrientId] = fn.value
                     }
                     val N = UsdaFoodNutrient
-                    val f = weight / 100.0
-                    dbNutrients = NutrientData(
+                    val f = item.weight / 100.0
+                    val n = NutrientData(
                         calories = (nMap[N.ENERGY] ?: 0.0) * f, protein = (nMap[N.PROTEIN] ?: 0.0) * f,
                         fat = (nMap[N.FAT] ?: 0.0) * f, carbs = (nMap[N.CARBS] ?: 0.0) * f,
                         fiber = (nMap[N.FIBER] ?: 0.0) * f, vitaminA = (nMap[N.VITAMIN_A] ?: 0.0) * f,
@@ -193,53 +204,173 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
                         manganese = (nMap[N.MANGANESE] ?: 0.0) * f, selenium = (nMap[N.SELENIUM] ?: 0.0) * f,
                         iodine = (nMap[N.IODINE] ?: 0.0) * f, chromium = (nMap[N.CHROMIUM] ?: 0.0) * f
                     )
-                    Log.d("Repository", "USDA '${food.description}': cal=${dbNutrients.calories}")
+                    if (n.calories > 0 || n.protein > 0 || n.fat > 0 || n.carbs > 0) {
+                        item.usdaNutrients = n
+                        Log.d("Repository", "USDA '${food.description}': cal=${n.calories}")
+                    }
                 }
             } catch (e: Exception) {
-                Log.w("Repository", "USDA search failed for '$foodNameEn': ${e.message}")
+                Log.w("Repository", "USDA search failed for '${item.foodNameEn}': ${e.message}")
             }
+        }
 
-            if (dbNutrients != null && dbNutrients.protein > 0) {
-                dbNutrients = fillMissingMicrosWithAI(dbNutrients, foodNameEn, weight)
-                results.add(FoodAnalysisResult(foodName = foodNameRu, foodNameEn = foodNameEn, weightGrams = weight, nutrients = dbNutrients))
-            } else {
-                // Fallback: full AI analysis for this single food
-                Log.d("Repository", "USDA not found for '$foodNameEn', using AI")
-                val fullPrompt = """
-You are a professional nutritionist. Provide nutritional values PER 100 GRAMS for: $foodNameEn.
-IMPORTANT: All values must be PER 100 GRAMS, not for ${weight.toInt()}g.
-Return ONLY JSON:
-{
-  "food_name": "$foodNameRu",
-  "food_name_en": "$foodNameEn",
-  "weight_grams": 100,
-  "nutrients": {
-    "calories": <kcal per 100g>, "protein": <g per 100g>, "fat": <g per 100g>, "carbs": <g per 100g>, "fiber": <g per 100g>,
-    "vitamin_a": <mcg per 100g>, "vitamin_b1": <mg per 100g>, "vitamin_b2": <mg per 100g>, "vitamin_b3": <mg per 100g>,
-    "vitamin_b5": <mg per 100g>, "vitamin_b6": <mg per 100g>, "vitamin_b7": <mcg per 100g>, "vitamin_b9": <mcg per 100g>,
-    "vitamin_b12": <mcg per 100g>, "vitamin_c": <mg per 100g>, "vitamin_d": <mcg per 100g>, "vitamin_e": <mg per 100g>,
-    "vitamin_k": <mcg per 100g>, "calcium": <mg per 100g>, "iron": <mg per 100g>, "magnesium": <mg per 100g>,
-    "phosphorus": <mg per 100g>, "potassium": <mg per 100g>, "sodium": <mg per 100g>, "zinc": <mg per 100g>,
-    "copper": <mg per 100g>, "manganese": <mg per 100g>, "selenium": <mcg per 100g>, "iodine": <mcg per 100g>, "chromium": <mcg per 100g>
-  }
-}
+        // Step 3: ONE batch AI call for ALL items that need nutrients (failed USDA)
+        val needAi = pending.filter { it.usdaNutrients == null }
+        if (needAi.isNotEmpty()) {
+            Log.d("Repository", "Batch AI for ${needAi.size} items without USDA data")
+            try {
+                val foodsList = needAi.mapIndexed { i, item ->
+                    "${i + 1}. ${item.foodNameEn} (per 100g)"
+                }.joinToString("\n")
+                val batchPrompt = """
+You are a professional nutritionist. Provide nutritional values PER 100 GRAMS for EACH food below.
+Return ONLY a JSON array with one object per food, in the SAME ORDER.
+
+Foods:
+$foodsList
+
+Return format (array of ${needAi.size} objects):
+[
+  {
+    "calories": <kcal>, "protein": <g>, "fat": <g>, "carbs": <g>, "fiber": <g>,
+    "vitamin_a": <mcg>, "vitamin_b1": <mg>, "vitamin_b2": <mg>, "vitamin_b3": <mg>,
+    "vitamin_b5": <mg>, "vitamin_b6": <mg>, "vitamin_b7": <mcg>, "vitamin_b9": <mcg>,
+    "vitamin_b12": <mcg>, "vitamin_c": <mg>, "vitamin_d": <mcg>, "vitamin_e": <mg>,
+    "vitamin_k": <mcg>, "calcium": <mg>, "iron": <mg>, "magnesium": <mg>,
+    "phosphorus": <mg>, "potassium": <mg>, "sodium": <mg>, "zinc": <mg>,
+    "copper": <mg>, "manganese": <mg>, "selenium": <mcg>, "iodine": <mcg>, "chromium": <mcg>
+  },
+  ...
+]
 """.trimIndent()
+                val text = callOpenRouterWithRetry(
+                    messages = listOf(OpenRouterMessage(role = "user", content = batchPrompt)),
+                    models = textModels
+                )
+                val json = extractJsonContent(text)
+                Log.d("Repository", "Batch AI response: $json")
+                val parsed = parseBatchNutrientArray(json)
+                Log.d("Repository", "Batch AI parsed ${parsed.size} items for ${needAi.size} foods")
+                for ((listIdx, item) in needAi.withIndex()) {
+                    if (listIdx < parsed.size) {
+                        val m = parsed[listIdx]
+                        fun v(key: String) = (m[key] as? Number)?.toDouble() ?: 0.0
+                        val f = item.weight / 100.0
+                        item.usdaNutrients = NutrientData(
+                            calories = v("calories") * f, protein = v("protein") * f,
+                            fat = v("fat") * f, carbs = v("carbs") * f, fiber = v("fiber") * f,
+                            vitaminA = v("vitamin_a") * f, vitaminB1 = v("vitamin_b1") * f,
+                            vitaminB2 = v("vitamin_b2") * f, vitaminB3 = v("vitamin_b3") * f,
+                            vitaminB5 = v("vitamin_b5") * f, vitaminB6 = v("vitamin_b6") * f,
+                            vitaminB7 = v("vitamin_b7") * f, vitaminB9 = v("vitamin_b9") * f,
+                            vitaminB12 = v("vitamin_b12") * f, vitaminC = v("vitamin_c") * f,
+                            vitaminD = v("vitamin_d") * f, vitaminE = v("vitamin_e") * f,
+                            vitaminK = v("vitamin_k") * f, calcium = v("calcium") * f,
+                            iron = v("iron") * f, magnesium = v("magnesium") * f,
+                            phosphorus = v("phosphorus") * f, potassium = v("potassium") * f,
+                            sodium = v("sodium") * f, zinc = v("zinc") * f,
+                            copper = v("copper") * f, manganese = v("manganese") * f,
+                            selenium = v("selenium") * f, iodine = v("iodine") * f,
+                            chromium = v("chromium") * f
+                        )
+                        Log.d("Repository", "Batch AI '${item.foodNameEn}': cal=${item.usdaNutrients!!.calories}")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w("Repository", "Batch AI failed: ${e.message}")
+            }
+        }
+
+        // Step 4: ONE batch AI call to fill missing micros for ALL items that have macros
+        val needMicros = pending.filter { it.usdaNutrients != null }
+        if (needMicros.isNotEmpty()) {
+            val itemsWithMissing = needMicros.filter { item ->
+                val n = item.usdaNutrients!!
+                n.vitaminA == 0.0 || n.vitaminC == 0.0 || n.calcium == 0.0 || n.iron == 0.0
+            }
+            if (itemsWithMissing.isNotEmpty()) {
+                Log.d("Repository", "Batch micro fill for ${itemsWithMissing.size} items")
                 try {
-                    val per100g = callOpenRouterForFood(fullPrompt)
-                    val factor = weight / 100.0
-                    results.add(FoodAnalysisResult(
-                        foodName = foodNameRu,
-                        foodNameEn = foodNameEn,
-                        weightGrams = weight,
-                        nutrients = per100g.nutrients * factor
-                    ))
+                    val foodsList = itemsWithMissing.mapIndexed { i, item ->
+                        "${i + 1}. ${item.foodNameEn}"
+                    }.joinToString("\n")
+                    val microPrompt = """
+For each food below, provide ALL micronutrients PER 100 GRAMS using USDA reference values.
+Return ONLY a JSON array with one object per food, in the SAME ORDER.
+
+Foods:
+$foodsList
+
+Return format (array of ${itemsWithMissing.size} objects):
+[
+  {
+    "vitamin_a": <mcg>, "vitamin_b1": <mg>, "vitamin_b2": <mg>, "vitamin_b3": <mg>,
+    "vitamin_b5": <mg>, "vitamin_b6": <mg>, "vitamin_b7": <mcg>, "vitamin_b9": <mcg>,
+    "vitamin_b12": <mcg>, "vitamin_c": <mg>, "vitamin_d": <mcg>, "vitamin_e": <mg>,
+    "vitamin_k": <mcg>, "calcium": <mg>, "iron": <mg>, "magnesium": <mg>,
+    "phosphorus": <mg>, "potassium": <mg>, "sodium": <mg>, "zinc": <mg>,
+    "copper": <mg>, "manganese": <mg>, "selenium": <mcg>, "iodine": <mcg>, "chromium": <mcg>
+  },
+  ...
+]
+""".trimIndent()
+                    val text = callOpenRouterWithRetry(
+                        messages = listOf(OpenRouterMessage(role = "user", content = microPrompt)),
+                        models = textModels
+                    )
+                    val json = extractJsonContent(text)
+                    Log.d("Repository", "Batch micro response: $json")
+                    val parsed = parseBatchNutrientArray(json)
+                    for ((listIdx, item) in itemsWithMissing.withIndex()) {
+                        if (listIdx < parsed.size) {
+                            val m = parsed[listIdx]
+                            fun v(key: String) = (m[key] as? Number)?.toDouble() ?: 0.0
+                            val f = item.weight / 100.0
+                            val n = item.usdaNutrients!!
+                            item.usdaNutrients = n.copy(
+                                vitaminA = if (n.vitaminA == 0.0) v("vitamin_a") * f else n.vitaminA,
+                                vitaminB1 = if (n.vitaminB1 == 0.0) v("vitamin_b1") * f else n.vitaminB1,
+                                vitaminB2 = if (n.vitaminB2 == 0.0) v("vitamin_b2") * f else n.vitaminB2,
+                                vitaminB3 = if (n.vitaminB3 == 0.0) v("vitamin_b3") * f else n.vitaminB3,
+                                vitaminB5 = if (n.vitaminB5 == 0.0) v("vitamin_b5") * f else n.vitaminB5,
+                                vitaminB6 = if (n.vitaminB6 == 0.0) v("vitamin_b6") * f else n.vitaminB6,
+                                vitaminB7 = if (n.vitaminB7 == 0.0) v("vitamin_b7") * f else n.vitaminB7,
+                                vitaminB9 = if (n.vitaminB9 == 0.0) v("vitamin_b9") * f else n.vitaminB9,
+                                vitaminB12 = if (n.vitaminB12 == 0.0) v("vitamin_b12") * f else n.vitaminB12,
+                                vitaminC = if (n.vitaminC == 0.0) v("vitamin_c") * f else n.vitaminC,
+                                vitaminD = if (n.vitaminD == 0.0) v("vitamin_d") * f else n.vitaminD,
+                                vitaminE = if (n.vitaminE == 0.0) v("vitamin_e") * f else n.vitaminE,
+                                vitaminK = if (n.vitaminK == 0.0) v("vitamin_k") * f else n.vitaminK,
+                                calcium = if (n.calcium == 0.0) v("calcium") * f else n.calcium,
+                                iron = if (n.iron == 0.0) v("iron") * f else n.iron,
+                                magnesium = if (n.magnesium == 0.0) v("magnesium") * f else n.magnesium,
+                                phosphorus = if (n.phosphorus == 0.0) v("phosphorus") * f else n.phosphorus,
+                                potassium = if (n.potassium == 0.0) v("potassium") * f else n.potassium,
+                                sodium = if (n.sodium == 0.0) v("sodium") * f else n.sodium,
+                                zinc = if (n.zinc == 0.0) v("zinc") * f else n.zinc,
+                                copper = if (n.copper == 0.0) v("copper") * f else n.copper,
+                                manganese = if (n.manganese == 0.0) v("manganese") * f else n.manganese,
+                                selenium = if (n.selenium == 0.0) v("selenium") * f else n.selenium,
+                                iodine = if (n.iodine == 0.0) v("iodine") * f else n.iodine,
+                                chromium = if (n.chromium == 0.0) v("chromium") * f else n.chromium
+                            )
+                        }
+                    }
                 } catch (e: Exception) {
-                    Log.w("Repository", "AI fallback failed for '$foodNameRu': ${e.message}")
-                    results.add(FoodAnalysisResult(foodName = foodNameRu, foodNameEn = foodNameEn, weightGrams = weight, nutrients = NutrientData()))
+                    Log.w("Repository", "Batch micro fill failed: ${e.message}")
                 }
             }
         }
-        return results
+
+        // Build final results
+        return pending.map { item ->
+            FoodAnalysisResult(
+                foodName = item.foodNameRu,
+                foodNameEn = item.foodNameEn,
+                weightGrams = item.weight,
+                nutrients = item.usdaNutrients ?: NutrientData()
+            )
+        }
     }
 
     /**
@@ -319,6 +450,44 @@ Return ONLY JSON:
             if (c == '}') { depth--; if (depth == 0) return i }
         }
         return -1
+    }
+
+    /** Parse batch AI response into a list of nutrient maps. Handles JSON array, numbered objects, etc. */
+    @Suppress("UNCHECKED_CAST")
+    private fun parseBatchNutrientArray(json: String): List<Map<String, Any>> {
+        // Try as JSON array first
+        if (json.trimStart().startsWith("[")) {
+            try {
+                val type = object : com.google.gson.reflect.TypeToken<List<Map<String, Any>>>() {}.type
+                val reader = JsonReader(java.io.StringReader(json))
+                reader.isLenient = true
+                return gson.fromJson(reader, type)
+            } catch (e: Exception) {
+                Log.w("Repository", "Batch parse as array failed: ${e.message}")
+            }
+        }
+        // Fallback: extract individual {...} objects from text
+        val objects = mutableListOf<Map<String, Any>>()
+        var searchFrom = 0
+        while (searchFrom < json.length) {
+            val objStart = json.indexOf('{', searchFrom)
+            if (objStart < 0) break
+            val objEnd = findMatchingBrace(json, objStart)
+            if (objEnd < 0) break
+            try {
+                val objStr = json.substring(objStart, objEnd + 1)
+                val reader = JsonReader(java.io.StringReader(objStr))
+                reader.isLenient = true
+                val map: Map<String, Any> = gson.fromJson(reader, Map::class.java) as Map<String, Any>
+                if (map.containsKey("calories") || map.containsKey("protein") || map.containsKey("vitamin_a")) {
+                    objects.add(map)
+                }
+            } catch (e: Exception) {
+                Log.w("Repository", "Batch parse object at $objStart failed: ${e.message}")
+            }
+            searchFrom = objEnd + 1
+        }
+        return objects
     }
 
     private suspend fun fillMissingMicrosWithAI(nutrients: NutrientData, foodNameEn: String, weight: Double): NutrientData {
@@ -534,7 +703,7 @@ Return ONLY JSON, e.g.: {"vitamin_a": 45, "calcium": 11}
                 if (!httpResponse.isSuccessful) {
                     val errorBody = httpResponse.errorBody()?.string() ?: "No error body"
                     Log.w("Repository", "Model $model HTTP $httpCode: $errorBody")
-                    if (httpCode == 429 || httpCode == 503) {
+                    if (httpCode in listOf(429, 502, 503, 524)) {
                         lastError = Exception("$model: HTTP $httpCode")
                         delay(1500)
                         continue // try next model
@@ -552,7 +721,7 @@ Return ONLY JSON, e.g.: {"vitamin_a": 45, "calcium": 11}
                 if (response.error != null) {
                     val code = response.error.code
                     Log.w("Repository", "Model $model error $code: ${response.error.message}")
-                    if (code == 429 || code == 503) {
+                    if (code in listOf(429, 502, 503, 524)) {
                         lastError = Exception("$model: ${response.error.message}")
                         delay(1500)
                         continue
@@ -570,7 +739,8 @@ Return ONLY JSON, e.g.: {"vitamin_a": 45, "calcium": 11}
                 return text
             } catch (e: Exception) {
                 if (lastError == null) lastError = e
-                if (e.message?.contains("429") == true || e.message?.contains("503") == true) {
+                val msg = e.message ?: ""
+                if (msg.contains("429") || msg.contains("503") || msg.contains("502") || msg.contains("524")) {
                     delay(1500)
                     continue
                 }

@@ -7,9 +7,8 @@ interface UsdaFdcApiService {
 
     @GET("fdc/v1/foods/search")
     suspend fun searchFoods(
-        @Query("api_key") apiKey: String = "DEMO_KEY",
+        @Query("api_key") apiKey: String = "FrYuRxWfygwuQbOzohHhbbI981ahQCGnPTJiDb35",
         @Query("query") query: String,
-        @Query("pageSize") pageSize: Int = 3,
-        @Query("dataType") dataType: String = "Survey (FNDDS),SR Legacy,Foundation"
+        @Query("pageSize") pageSize: Int = 5
     ): UsdaSearchResponse
 }

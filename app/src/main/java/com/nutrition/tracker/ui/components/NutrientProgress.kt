@@ -35,9 +35,9 @@ fun NutrientProgressBar(
     val progress = (current / target).coerceIn(0.0, 1.0).toFloat()
     val percent = (current / target * 100).toInt()
     val color = when {
-        ratio > 1.1 -> ProgressRed
-        ratio > 0.8 -> ProgressGreen
-        else -> ProgressYellow
+        ratio >= 0.8 -> ProgressGreen
+        ratio >= 0.4 -> ProgressYellow
+        else -> ProgressRed
     }
 
     val clickModifier = if (onClick != null) modifier.clickable { onClick() } else modifier
