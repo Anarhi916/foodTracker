@@ -28,16 +28,21 @@ class NutritionRepository(
 
     // Fallback text models (tried in order if rate-limited)
     private val textModels = listOf(
-        "google/gemma-3-12b-it:free",
+        "google/gemma-4-31b-it:free",
+        "nvidia/nemotron-3-super-120b-a12b:free",
+        "openai/gpt-oss-120b:free",
         "google/gemma-3-27b-it:free",
-        "google/gemma-3-4b-it:free",
-        "meta-llama/llama-3.3-70b-instruct:free",
-        "liquid/lfm-2.5-1.2b-instruct:free"
+        "google/gemma-3-12b-it:free",
+        "z-ai/glm-4.5-air:free",
+        "minimax/minimax-m2.5:free",
+        "nvidia/nemotron-nano-9b-v2:free",
+        "meta-llama/llama-3.3-70b-instruct:free"
     )
 
     // Fallback vision models
     private val visionModels = listOf(
         "nvidia/nemotron-nano-12b-v2-vl:free",
+        "google/gemma-4-31b-it:free",
         "google/gemma-3-12b-it:free"
     )
 
@@ -125,13 +130,17 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
 Определи ВСЕ продукты и их вес из описания. Описание может содержать один или несколько продуктов.
 Если указано количество штук — рассчитай общий вес. Если вес не указан — оцени типичную порцию.
 
+ВАЖНО: food_name_en — это ТОЧНЫЙ перевод названия блюда на английский для поиска в USDA базе данных.
+Примеры правильного перевода:
+- "куриная отбивная" → "chicken breast cutlet"
+- "гречневая каша" → "buckwheat porridge"  
+- "творог нежирный" → "low-fat cottage cheese"
+- "борщ" → "borscht"
+
 Описание: $foodDescription
 
 Верни ТОЛЬКО JSON массив (даже если продукт один):
-[{"food_name": "<название НА РУССКОМ>", "food_name_en": "<name IN ENGLISH for database>", "weight_grams": <число>}]
-
-Пример для "хлеб 100г, масло 20г":
-[{"food_name": "Хлеб белый", "food_name_en": "white bread", "weight_grams": 100}, {"food_name": "Масло сливочное", "food_name_en": "butter", "weight_grams": 20}]
+[{"food_name": "<название НА РУССКОМ>", "food_name_en": "<EXACT English translation for USDA search>", "weight_grams": <число>}]
 """.trimIndent()
 
         val identifyText = callOpenRouterWithRetry(
@@ -197,25 +206,33 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
                 // Fallback: full AI analysis for this single food
                 Log.d("Repository", "USDA not found for '$foodNameEn', using AI")
                 val fullPrompt = """
-You are a professional nutritionist. Calculate precise nutritional values for: $foodNameEn (${weight.toInt()}g).
+You are a professional nutritionist. Provide nutritional values PER 100 GRAMS for: $foodNameEn.
+IMPORTANT: All values must be PER 100 GRAMS, not for ${weight.toInt()}g.
 Return ONLY JSON:
 {
   "food_name": "$foodNameRu",
   "food_name_en": "$foodNameEn",
-  "weight_grams": $weight,
+  "weight_grams": 100,
   "nutrients": {
-    "calories": <number>, "protein": <grams>, "fat": <grams>, "carbs": <grams>, "fiber": <grams>,
-    "vitamin_a": <mcg>, "vitamin_b1": <mg>, "vitamin_b2": <mg>, "vitamin_b3": <mg>,
-    "vitamin_b5": <mg>, "vitamin_b6": <mg>, "vitamin_b7": <mcg>, "vitamin_b9": <mcg>,
-    "vitamin_b12": <mcg>, "vitamin_c": <mg>, "vitamin_d": <mcg>, "vitamin_e": <mg>,
-    "vitamin_k": <mcg>, "calcium": <mg>, "iron": <mg>, "magnesium": <mg>,
-    "phosphorus": <mg>, "potassium": <mg>, "sodium": <mg>, "zinc": <mg>,
-    "copper": <mg>, "manganese": <mg>, "selenium": <mcg>, "iodine": <mcg>, "chromium": <mcg>
+    "calories": <kcal per 100g>, "protein": <g per 100g>, "fat": <g per 100g>, "carbs": <g per 100g>, "fiber": <g per 100g>,
+    "vitamin_a": <mcg per 100g>, "vitamin_b1": <mg per 100g>, "vitamin_b2": <mg per 100g>, "vitamin_b3": <mg per 100g>,
+    "vitamin_b5": <mg per 100g>, "vitamin_b6": <mg per 100g>, "vitamin_b7": <mcg per 100g>, "vitamin_b9": <mcg per 100g>,
+    "vitamin_b12": <mcg per 100g>, "vitamin_c": <mg per 100g>, "vitamin_d": <mcg per 100g>, "vitamin_e": <mg per 100g>,
+    "vitamin_k": <mcg per 100g>, "calcium": <mg per 100g>, "iron": <mg per 100g>, "magnesium": <mg per 100g>,
+    "phosphorus": <mg per 100g>, "potassium": <mg per 100g>, "sodium": <mg per 100g>, "zinc": <mg per 100g>,
+    "copper": <mg per 100g>, "manganese": <mg per 100g>, "selenium": <mcg per 100g>, "iodine": <mcg per 100g>, "chromium": <mcg per 100g>
   }
 }
 """.trimIndent()
                 try {
-                    results.add(callOpenRouterForFood(fullPrompt))
+                    val per100g = callOpenRouterForFood(fullPrompt)
+                    val factor = weight / 100.0
+                    results.add(FoodAnalysisResult(
+                        foodName = foodNameRu,
+                        foodNameEn = foodNameEn,
+                        weightGrams = weight,
+                        nutrients = per100g.nutrients * factor
+                    ))
                 } catch (e: Exception) {
                     Log.w("Repository", "AI fallback failed for '$foodNameRu': ${e.message}")
                     results.add(FoodAnalysisResult(foodName = foodNameRu, foodNameEn = foodNameEn, weightGrams = weight, nutrients = NutrientData()))
@@ -307,29 +324,67 @@ Return ONLY JSON:
     private suspend fun fillMissingMicrosWithAI(nutrients: NutrientData, foodNameEn: String, weight: Double): NutrientData {
         val missing = mutableListOf<String>()
         if (nutrients.vitaminA == 0.0) missing.add("vitamin_a (mcg RAE)")
+        if (nutrients.vitaminB1 == 0.0) missing.add("vitamin_b1 (mg)")
+        if (nutrients.vitaminB2 == 0.0) missing.add("vitamin_b2 (mg)")
+        if (nutrients.vitaminB3 == 0.0) missing.add("vitamin_b3 (mg)")
+        if (nutrients.vitaminB5 == 0.0) missing.add("vitamin_b5 (mg)")
+        if (nutrients.vitaminB6 == 0.0) missing.add("vitamin_b6 (mg)")
+        if (nutrients.vitaminB7 == 0.0) missing.add("vitamin_b7 (mcg)")
+        if (nutrients.vitaminB9 == 0.0) missing.add("vitamin_b9 (mcg)")
+        if (nutrients.vitaminB12 == 0.0) missing.add("vitamin_b12 (mcg)")
+        if (nutrients.vitaminC == 0.0) missing.add("vitamin_c (mg)")
         if (nutrients.vitaminD == 0.0) missing.add("vitamin_d (mcg)")
         if (nutrients.vitaminE == 0.0) missing.add("vitamin_e (mg)")
         if (nutrients.vitaminK == 0.0) missing.add("vitamin_k (mcg)")
-        if (nutrients.vitaminB7 == 0.0) missing.add("vitamin_b7 (mcg)")
+        if (nutrients.calcium == 0.0) missing.add("calcium (mg)")
+        if (nutrients.iron == 0.0) missing.add("iron (mg)")
+        if (nutrients.magnesium == 0.0) missing.add("magnesium (mg)")
+        if (nutrients.phosphorus == 0.0) missing.add("phosphorus (mg)")
+        if (nutrients.potassium == 0.0) missing.add("potassium (mg)")
+        if (nutrients.sodium == 0.0) missing.add("sodium (mg)")
+        if (nutrients.zinc == 0.0) missing.add("zinc (mg)")
+        if (nutrients.copper == 0.0) missing.add("copper (mg)")
+        if (nutrients.manganese == 0.0) missing.add("manganese (mg)")
+        if (nutrients.selenium == 0.0) missing.add("selenium (mcg)")
         if (nutrients.iodine == 0.0) missing.add("iodine (mcg)")
         if (nutrients.chromium == 0.0) missing.add("chromium (mcg)")
         if (missing.isEmpty()) return nutrients
         try {
             val prompt = """
-For "$foodNameEn" (${weight.toInt()}g), provide ONLY these nutrients using USDA reference values:
+For "$foodNameEn" per 100g, provide ONLY these nutrients using USDA reference values.
+IMPORTANT: Values must be PER 100 GRAMS of product, NOT for ${weight.toInt()}g.
 ${missing.joinToString(", ")}
-Return ONLY JSON, e.g.: {"vitamin_a": 720, "vitamin_d": 9}
+Return ONLY JSON, e.g.: {"vitamin_a": 45, "calcium": 11}
 """.trimIndent()
             val text = callOpenRouterWithRetry(listOf(OpenRouterMessage(role = "user", content = prompt)), textModels)
             val json = extractJson(text)
             val map = gson.fromJson(json, Map::class.java) as? Map<String, Any> ?: return nutrients
-            fun v(key: String) = (map[key] as? Number)?.toDouble() ?: 0.0
+            val f = weight / 100.0
+            fun v(key: String) = ((map[key] as? Number)?.toDouble() ?: 0.0) * f
             return nutrients.copy(
                 vitaminA = if (nutrients.vitaminA == 0.0) v("vitamin_a") else nutrients.vitaminA,
+                vitaminB1 = if (nutrients.vitaminB1 == 0.0) v("vitamin_b1") else nutrients.vitaminB1,
+                vitaminB2 = if (nutrients.vitaminB2 == 0.0) v("vitamin_b2") else nutrients.vitaminB2,
+                vitaminB3 = if (nutrients.vitaminB3 == 0.0) v("vitamin_b3") else nutrients.vitaminB3,
+                vitaminB5 = if (nutrients.vitaminB5 == 0.0) v("vitamin_b5") else nutrients.vitaminB5,
+                vitaminB6 = if (nutrients.vitaminB6 == 0.0) v("vitamin_b6") else nutrients.vitaminB6,
+                vitaminB7 = if (nutrients.vitaminB7 == 0.0) v("vitamin_b7") else nutrients.vitaminB7,
+                vitaminB9 = if (nutrients.vitaminB9 == 0.0) v("vitamin_b9") else nutrients.vitaminB9,
+                vitaminB12 = if (nutrients.vitaminB12 == 0.0) v("vitamin_b12") else nutrients.vitaminB12,
+                vitaminC = if (nutrients.vitaminC == 0.0) v("vitamin_c") else nutrients.vitaminC,
                 vitaminD = if (nutrients.vitaminD == 0.0) v("vitamin_d") else nutrients.vitaminD,
                 vitaminE = if (nutrients.vitaminE == 0.0) v("vitamin_e") else nutrients.vitaminE,
                 vitaminK = if (nutrients.vitaminK == 0.0) v("vitamin_k") else nutrients.vitaminK,
-                vitaminB7 = if (nutrients.vitaminB7 == 0.0) v("vitamin_b7") else nutrients.vitaminB7,
+                calcium = if (nutrients.calcium == 0.0) v("calcium") else nutrients.calcium,
+                iron = if (nutrients.iron == 0.0) v("iron") else nutrients.iron,
+                magnesium = if (nutrients.magnesium == 0.0) v("magnesium") else nutrients.magnesium,
+                phosphorus = if (nutrients.phosphorus == 0.0) v("phosphorus") else nutrients.phosphorus,
+                potassium = if (nutrients.potassium == 0.0) v("potassium") else nutrients.potassium,
+                sodium = if (nutrients.sodium == 0.0) v("sodium") else nutrients.sodium,
+                zinc = if (nutrients.zinc == 0.0) v("zinc") else nutrients.zinc,
+                copper = if (nutrients.copper == 0.0) v("copper") else nutrients.copper,
+                manganese = if (nutrients.manganese == 0.0) v("manganese") else nutrients.manganese,
+                selenium = if (nutrients.selenium == 0.0) v("selenium") else nutrients.selenium,
                 iodine = if (nutrients.iodine == 0.0) v("iodine") else nutrients.iodine,
                 chromium = if (nutrients.chromium == 0.0) v("chromium") else nutrients.chromium
             )
@@ -373,6 +428,10 @@ Return ONLY JSON, e.g.: {"vitamin_a": 720, "vitamin_d": 9}
         val messages = listOf(OpenRouterMessage(role = "user", content = contentParts))
         val text = callOpenRouterWithRetry(messages = messages, models = visionModels)
         return parseFoodResult(text)
+    }
+
+    suspend fun enrichNutrientsWithAI(foodName: String, nutrients: NutrientData, weight: Double): NutrientData {
+        return fillMissingMicrosWithAI(nutrients, foodName, weight)
     }
 
     suspend fun addFoodEntry(foodName: String, weightGrams: Double, nutrients: NutrientData, source: String = "manual") {

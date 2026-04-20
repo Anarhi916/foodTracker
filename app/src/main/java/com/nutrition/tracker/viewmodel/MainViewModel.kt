@@ -216,12 +216,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val nutrients = per100g * factor
 
         viewModelScope.launch {
-            repo.addFoodEntry(name, weight, nutrients, state.weightDialogSource)
             _uiState.value = _uiState.value.copy(
                 showBarcodeWeightDialog = false,
                 barcodeProductName = null,
-                barcodeNutrientsPer100g = null
+                barcodeNutrientsPer100g = null,
+                isLoading = true
             )
+            try {
+                val enriched = repo.enrichNutrientsWithAI(name, nutrients, weight)
+                repo.addFoodEntry(name, weight, enriched, state.weightDialogSource)
+            } catch (e: Exception) {
+                // If AI enrichment fails, save with original nutrients
+                repo.addFoodEntry(name, weight, nutrients, state.weightDialogSource)
+            }
+            _uiState.value = _uiState.value.copy(isLoading = false)
         }
     }
 

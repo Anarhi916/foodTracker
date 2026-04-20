@@ -7,7 +7,7 @@ import com.google.gson.annotations.SerializedName
 data class OpenRouterRequest(
     val model: String = "google/gemma-3-12b-it:free",
     val messages: List<OpenRouterMessage>,
-    val temperature: Float = 0.15f,
+    val temperature: Float = 0.0f,
     @SerializedName("max_tokens")
     val maxTokens: Int = 4096
 )
