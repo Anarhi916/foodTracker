@@ -46,6 +46,11 @@ class NutritionRepository(
         "google/gemma-3-12b-it:free"
     )
 
+    // Paid model for initial daily norms calculation only.
+    private val normsModels = listOf(
+        "openai/gpt-4o-mini"
+    )
+
     fun todayDate(): String = LocalDate.now().format(dateFormatter)
 
     // --- User Profile ---
@@ -106,7 +111,11 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
 }
 """.trimIndent()
 
-        val nutrients = callOpenRouterText(prompt)
+        val normsText = callOpenRouterWithRetry(
+            messages = listOf(OpenRouterMessage(role = "user", content = prompt)),
+            models = normsModels
+        )
+        val nutrients = parseNutrientData(normsText)
         db.dailyNormsDao().deleteAll()
         db.dailyNormsDao().insert(DailyNormsEntity(nutrientsJson = gson.toJson(nutrients)))
         return nutrients
