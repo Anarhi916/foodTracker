@@ -247,15 +247,38 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
                         manganese = (nMap[N.MANGANESE] ?: 0.0) * f, selenium = (nMap[N.SELENIUM] ?: 0.0) * f,
                         iodine = (nMap[N.IODINE] ?: 0.0) * f, chromium = (nMap[N.CHROMIUM] ?: 0.0) * f
                     )
+                    // Correct US enrichment bias for flour-based foods
+                    // In the US, flour is fortified with B9, B1, B2, B3, iron — not typical for Eastern Europe
+                    val flourKeywords = listOf(
+                        "pierogi", "dumpling", "pelmeni", "ravioli", "wonton",
+                        "bread", "roll", "bun", "bagel", "tortilla", "pita", "naan", "flatbread",
+                        "pasta", "noodle", "spaghetti", "macaroni", "lasagna",
+                        "pancake", "crepe", "waffle", "blini", "blintz",
+                        "cake", "cookie", "biscuit", "muffin", "pie", "pastry", "croissant", "doughnut",
+                        "flour", "cereal", "cornmeal", "porridge"
+                    )
+                    val foodDesc = (food.description ?: "").lowercase() + " " + item.foodNameEn.lowercase()
+                    val isFlourBased = flourKeywords.any { foodDesc.contains(it) }
+                    val corrected = if (isFlourBased) {
+                        Log.d("Repository", "Applying enrichment correction for flour-based: ${food.description}")
+                        n.copy(
+                            vitaminB1 = n.vitaminB1 * 0.17,  // enriched ~0.6mg → natural ~0.1mg
+                            vitaminB2 = n.vitaminB2 * 0.10,  // enriched ~0.4mg → natural ~0.04mg
+                            vitaminB3 = n.vitaminB3 * 0.22,  // enriched ~5.9mg → natural ~1.3mg
+                            vitaminB9 = n.vitaminB9 * 0.17,  // enriched ~150mcg → natural ~25mcg
+                            iron = n.iron * 0.26              // enriched ~4.6mg → natural ~1.2mg
+                        )
+                    } else n
+
                     // Sanity check: macros from fat+protein+carbs shouldn't exceed reported calories by >30%
                     val macroCalories = (nMap[N.PROTEIN] ?: 0.0) * 4 + (nMap[N.FAT] ?: 0.0) * 9 + (nMap[N.CARBS] ?: 0.0) * 4
                     val reportedCalories = nMap[N.ENERGY] ?: 0.0
                     val sane = reportedCalories > 0 && (macroCalories <= reportedCalories * 1.3)
                     Log.d("Repository", "USDA '${food.description}' [${food.dataType}]: " +
-                        "cal=${n.calories}, p=${n.protein}, f=${n.fat}, c=${n.carbs} " +
-                        "(per100g: fat=${nMap[N.FAT] ?: 0.0}) sane=$sane")
-                    if (sane && (n.calories > 0 || n.protein > 0 || n.fat > 0 || n.carbs > 0)) {
-                        item.usdaNutrients = n
+                        "cal=${corrected.calories}, p=${corrected.protein}, f=${corrected.fat}, c=${corrected.carbs} " +
+                        "(per100g: fat=${nMap[N.FAT] ?: 0.0}) sane=$sane flourCorrected=$isFlourBased")
+                    if (sane && (corrected.calories > 0 || corrected.protein > 0 || corrected.fat > 0 || corrected.carbs > 0)) {
+                        item.usdaNutrients = corrected
                     }
                 }
             } catch (e: Exception) {
