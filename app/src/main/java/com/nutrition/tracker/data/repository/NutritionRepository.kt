@@ -48,7 +48,7 @@ class NutritionRepository(
 
     // Paid model for initial daily norms calculation only.
     private val normsModels = listOf(
-        "openai/gpt-4o-mini"
+        "google/gemini-2.5-pro-preview"
     )
 
     fun todayDate(): String = LocalDate.now().format(dateFormatter)
