@@ -10,6 +10,7 @@ data class UsdaSearchResponse(
 data class UsdaFood(
     val fdcId: Int? = null,
     val description: String? = null,
+    val dataType: String? = null,
     val foodNutrients: List<UsdaFoodNutrient>? = null
 )
 

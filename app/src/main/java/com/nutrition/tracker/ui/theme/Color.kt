@@ -12,6 +12,7 @@ val Teal40 = Color(0xFF00897B)
 
 val ProgressGreen = Color(0xFF4CAF50)
 val ProgressYellow = Color(0xFFFFC107)
+val ProgressOrange = Color(0xFFFF9800)
 val ProgressRed = Color(0xFFF44336)
 val ProgressBackground = Color(0xFFE0E0E0)
 

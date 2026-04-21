@@ -11,7 +11,6 @@ import com.nutrition.tracker.data.api.*
 import com.nutrition.tracker.data.db.*
 import com.nutrition.tracker.data.model.FoodAnalysisResult
 import com.nutrition.tracker.data.model.NutrientData
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -27,23 +26,27 @@ class NutritionRepository(
     private val apiKey = BuildConfig.OPENROUTER_API_KEY
 
     // Fallback text models (tried in order if rate-limited)
+    // Sorted by: reliability, speed, JSON quality from real testing
     private val textModels = listOf(
-        "google/gemma-4-31b-it:free",
-        "nvidia/nemotron-3-super-120b-a12b:free",
-        "openai/gpt-oss-120b:free",
-        "google/gemma-3-27b-it:free",
-        "google/gemma-3-12b-it:free",
-        "z-ai/glm-4.5-air:free",
-        "minimax/minimax-m2.5:free",
-        "nvidia/nemotron-nano-9b-v2:free",
-        "meta-llama/llama-3.3-70b-instruct:free"
+        "openai/gpt-oss-120b:free",                      // fast, reliable, good JSON
+        "nvidia/nemotron-3-super-120b-a12b:free",        // reliable, thinking model
+        "arcee-ai/trinity-large-preview:free",           // fast, non-thinking, good JSON
+        "nvidia/nemotron-3-nano-30b-a3b:free",           // fast thinking model
+        "openai/gpt-oss-20b:free",                       // reliable backup
+        "google/gemma-3-12b-it:free",                    // good but sometimes 429
+        "google/gemma-3-27b-it:free",                    // good but sometimes 429
+        "google/gemma-4-31b-it:free",                    // good but often 429
+        "z-ai/glm-4.5-air:free",                         // slower but works
+        "minimax/minimax-m2.5:free"                      // very slow (>60s), last resort
     )
 
-    // Fallback vision models
+    // Fallback vision models (support image_url input)
     private val visionModels = listOf(
-        "nvidia/nemotron-nano-12b-v2-vl:free",
         "google/gemma-4-31b-it:free",
-        "google/gemma-3-12b-it:free"
+        "google/gemma-3-27b-it:free",
+        "google/gemma-3-12b-it:free",
+        "google/gemma-3-4b-it:free",
+        "nvidia/nemotron-nano-12b-v2-vl:free"            // thinking model, needs more tokens
     )
 
     // Paid model for initial daily norms calculation only.
@@ -136,20 +139,38 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
     suspend fun analyzeFoodText(foodDescription: String): List<FoodAnalysisResult> {
         // Step 1: AI identifies all foods with names (RU + EN) and weights
         val identifyPrompt = """
-Определи ВСЕ продукты и их вес из описания. Описание может содержать один или несколько продуктов.
+Определи ВСЕ продукты и их вес из описания. Описание может быть на русском, украинском или другом языке.
 Если указано количество штук — рассчитай общий вес. Если вес не указан — оцени типичную порцию.
 
-ВАЖНО: food_name_en — это ТОЧНЫЙ перевод названия блюда на английский для поиска в USDA базе данных.
+ВАЖНО:
+- food_name — сохрани название НА ЯЗЫКЕ ВВОДА (не переводи на другой язык)
+- food_name_en — ТОЧНЫЙ перевод на английский для поиска в USDA базе данных
+
 Примеры правильного перевода:
-- "куриная отбивная" → "chicken breast cutlet"
-- "гречневая каша" → "buckwheat porridge"  
-- "творог нежирный" → "low-fat cottage cheese"
+- "куриная отбивная" / "куряча відбивна" → "chicken breast cutlet"
+- "гречневая каша" / "гречана каша" → "buckwheat porridge"  
+- "творог нежирный" / "сир кисломолочний нежирний" → "low-fat cottage cheese"
 - "борщ" → "borscht"
+- "вареники с картошкой" / "вареники з картоплею" → "potato pierogi"
+- "вареники с творогом" / "вареники з сиром" → "cottage cheese pierogi"
+- "пельмени" → "pelmeni meat dumplings"
+- "сырники" / "сирники" → "cottage cheese pancakes"
+- "окрошка" → "okroshka cold soup"
+- "оливье" / "олів'є" → "russian potato salad"
+- "винегрет" / "вінегрет" → "vinaigrette beet salad"
+- "млинці" / "блины" → "crepes"
+- "голубці" / "голубцы" → "stuffed cabbage rolls"
+- "банош" → "banosh cornmeal porridge"
+- "деруни" / "драники" → "potato pancakes"
+- "холодець" / "холодец" → "head cheese"
+- "заливне" / "заливное" → "jellied meat"
+- "шарлотка" → "apple sponge cake"
+- "запіканка" / "запеканка" → "cottage cheese casserole"
 
 Описание: $foodDescription
 
 Верни ТОЛЬКО JSON массив (даже если продукт один):
-[{"food_name": "<название НА РУССКОМ>", "food_name_en": "<EXACT English translation for USDA search>", "weight_grams": <число>}]
+[{"food_name": "<название НА ЯЗЫКЕ ВВОДА>", "food_name_en": "<EXACT English translation for USDA search>", "weight_grams": <число>}]
 """.trimIndent()
 
         val identifyText = callOpenRouterWithRetry(
@@ -185,10 +206,23 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
             Log.d("Repository", "Processing: '${item.foodNameRu}' / '${item.foodNameEn}', weight=${item.weight}g")
             try {
                 val usdaResult = usdaApi.searchFoods(query = item.foodNameEn)
-                // Pick best USDA result: prefer one with calories > 0
-                val food = usdaResult.foods?.firstOrNull { f ->
+                // Relevance filter: USDA description must contain at least one query word
+                val queryWords = item.foodNameEn.lowercase().split("\\s+".toRegex())
+                    .filter { it.length >= 3 } // skip short words like "no", "of", "with"
+                fun isRelevant(description: String?): Boolean {
+                    if (description == null || queryWords.isEmpty()) return false
+                    val desc = description.lowercase()
+                    return queryWords.any { word -> desc.contains(word) }
+                }
+                // Pick best USDA result: prefer Survey/SR Legacy over Branded, require calories > 0, must be relevant
+                val foodsWithCalories = usdaResult.foods?.filter { f ->
                     f.foodNutrients?.any { it.nutrientId == UsdaFoodNutrient.ENERGY && (it.value ?: 0.0) > 0 } == true
-                } ?: usdaResult.foods?.firstOrNull()
+                        && isRelevant(f.description)
+                } ?: emptyList()
+                val food = foodsWithCalories.firstOrNull { it.dataType == "Survey (FNDDS)" }
+                    ?: foodsWithCalories.firstOrNull { it.dataType == "SR Legacy" }
+                    ?: foodsWithCalories.firstOrNull { it.dataType != "Branded" }
+                    ?: foodsWithCalories.firstOrNull()
                 if (food?.foodNutrients != null) {
                     val nMap = mutableMapOf<Int, Double>()
                     for (fn in food.foodNutrients) {
@@ -213,9 +247,15 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
                         manganese = (nMap[N.MANGANESE] ?: 0.0) * f, selenium = (nMap[N.SELENIUM] ?: 0.0) * f,
                         iodine = (nMap[N.IODINE] ?: 0.0) * f, chromium = (nMap[N.CHROMIUM] ?: 0.0) * f
                     )
-                    if (n.calories > 0 || n.protein > 0 || n.fat > 0 || n.carbs > 0) {
+                    // Sanity check: macros from fat+protein+carbs shouldn't exceed reported calories by >30%
+                    val macroCalories = (nMap[N.PROTEIN] ?: 0.0) * 4 + (nMap[N.FAT] ?: 0.0) * 9 + (nMap[N.CARBS] ?: 0.0) * 4
+                    val reportedCalories = nMap[N.ENERGY] ?: 0.0
+                    val sane = reportedCalories > 0 && (macroCalories <= reportedCalories * 1.3)
+                    Log.d("Repository", "USDA '${food.description}' [${food.dataType}]: " +
+                        "cal=${n.calories}, p=${n.protein}, f=${n.fat}, c=${n.carbs} " +
+                        "(per100g: fat=${nMap[N.FAT] ?: 0.0}) sane=$sane")
+                    if (sane && (n.calories > 0 || n.protein > 0 || n.fat > 0 || n.carbs > 0)) {
                         item.usdaNutrients = n
-                        Log.d("Repository", "USDA '${food.description}': cal=${n.calories}")
                     }
                 }
             } catch (e: Exception) {
@@ -714,8 +754,7 @@ Return ONLY JSON, e.g.: {"vitamin_a": 45, "calcium": 11}
                     Log.w("Repository", "Model $model HTTP $httpCode: $errorBody")
                     if (httpCode in listOf(429, 502, 503, 524)) {
                         lastError = Exception("$model: HTTP $httpCode")
-                        delay(1500)
-                        continue // try next model
+                        continue // try next model immediately
                     }
                     throw Exception("API ошибка HTTP $httpCode: $errorBody")
                 }
@@ -732,15 +771,22 @@ Return ONLY JSON, e.g.: {"vitamin_a": 45, "calcium": 11}
                     Log.w("Repository", "Model $model error $code: ${response.error.message}")
                     if (code in listOf(429, 502, 503, 524)) {
                         lastError = Exception("$model: ${response.error.message}")
-                        delay(1500)
-                        continue
+                        continue // try next model immediately
                     }
                     throw Exception("API ошибка: ${response.error.message}")
                 }
 
-                val text = response.choices?.firstOrNull()?.message?.content
+                val msg = response.choices?.firstOrNull()?.message
+                val text = msg?.content
                 if (text.isNullOrBlank()) {
-                    Log.w("Repository", "Model $model returned empty content, trying next")
+                    // Thinking models may put all output in reasoning with content=null
+                    // when max_tokens is too low. Skip to next model.
+                    val reasoning = msg?.reasoning
+                    if (!reasoning.isNullOrBlank()) {
+                        Log.w("Repository", "Model $model: content empty, only reasoning (${reasoning.length} chars). Skipping.")
+                    } else {
+                        Log.w("Repository", "Model $model returned empty content, trying next")
+                    }
                     lastError = Exception("$model: пустой ответ")
                     continue
                 }
@@ -750,8 +796,7 @@ Return ONLY JSON, e.g.: {"vitamin_a": 45, "calcium": 11}
                 if (lastError == null) lastError = e
                 val msg = e.message ?: ""
                 if (msg.contains("429") || msg.contains("503") || msg.contains("502") || msg.contains("524")) {
-                    delay(1500)
-                    continue
+                    continue // try next model immediately
                 }
                 throw e
             }

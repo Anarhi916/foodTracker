@@ -39,7 +39,8 @@ data class OpenRouterChoice(
 )
 
 data class OpenRouterResponseMessage(
-    val content: String? = null
+    val content: String? = null,
+    val reasoning: String? = null
 )
 
 data class OpenRouterError(
