@@ -10,6 +10,7 @@ import com.nutrition.tracker.data.model.NutrientData
 import com.nutrition.tracker.data.db.UserProfileEntity
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.flow
 
 data class MainUiState(
     val foodInput: String = "",
@@ -36,7 +37,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _uiState = MutableStateFlow(MainUiState())
     val uiState: StateFlow<MainUiState> = _uiState
 
-    val todayEntries: StateFlow<List<FoodEntryEntity>> = repo.getTodayEntries()
+    // Emits a new value every time the date changes (checked every 30s)
+    private val currentDate: StateFlow<String> = flow {
+        while (true) {
+            emit(repo.todayDate())
+            kotlinx.coroutines.delay(30_000)
+        }
+    }.distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, repo.todayDate())
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val todayEntries: StateFlow<List<FoodEntryEntity>> = currentDate
+        .flatMapLatest { repo.getEntriesForDate(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val dailyNorms: StateFlow<NutrientData?> = repo.getDailyNorms()
