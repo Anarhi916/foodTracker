@@ -377,4 +377,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun deleteCachedFood(entry: FoodCacheEntity) {
         viewModelScope.launch { repo.deleteCachedFood(entry) }
     }
+
+    fun deleteAllCachedFoods() {
+        viewModelScope.launch { repo.deleteAllCachedFoods() }
+    }
+
+    fun updateCachedFood(entry: FoodCacheEntity, nutrients: NutrientData) {
+        viewModelScope.launch { repo.updateCachedFood(entry.id, nutrients) }
+    }
 }

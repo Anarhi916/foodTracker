@@ -141,20 +141,33 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
 
     suspend fun deleteCachedFood(entry: FoodCacheEntity) = db.foodCacheDao().delete(entry)
 
+    suspend fun deleteAllCachedFoods() = db.foodCacheDao().deleteAll()
+
+    suspend fun updateCachedFood(id: Long, nutrients: NutrientData) {
+        db.foodCacheDao().updateNutrients(id, gson.toJson(nutrients))
+    }
+
     private fun normalizeKey(name: String): String =
         name.lowercase().trim().replace(Regex("\\s+"), " ")
+            .split(" ").sorted().joinToString(" ")
 
     private suspend fun findInCache(key: String): Pair<FoodCacheEntity, NutrientData>? {
         val normalized = normalizeKey(key)
-        val entry = db.foodCacheDao().findByNormalizedKey(normalized) ?: return null
+        // First try exact normalized key match
+        val entry = db.foodCacheDao().findByNormalizedKey(normalized)
+        // If not found, try matching by English key
+            ?: db.foodCacheDao().findByKeyEn(normalized)
+            ?: return null
         val nutrients = gson.fromJson(entry.nutrientsPer100gJson, NutrientData::class.java)
         return entry to nutrients
     }
 
     private suspend fun saveToCache(keyOriginal: String, keyEn: String, nutrientsPer100g: NutrientData) {
-        val normalized = normalizeKey(keyOriginal)
         val normalizedEn = normalizeKey(keyEn)
-        // Save under original language key
+        // Only one row per product: if same keyEn already exists, don't duplicate
+        val existing = db.foodCacheDao().findByKeyEn(normalizedEn)
+        if (existing != null) return
+        val normalized = normalizeKey(keyOriginal)
         db.foodCacheDao().insert(
             FoodCacheEntity(
                 keyOriginal = keyOriginal,
@@ -163,17 +176,6 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
                 nutrientsPer100gJson = gson.toJson(nutrientsPer100g)
             )
         )
-        // Also save under English key if different
-        if (normalizedEn != normalized && normalizedEn.isNotBlank()) {
-            db.foodCacheDao().insert(
-                FoodCacheEntity(
-                    keyOriginal = keyEn,
-                    keyNormalized = normalizedEn,
-                    keyEn = keyEn,
-                    nutrientsPer100gJson = gson.toJson(nutrientsPer100g)
-                )
-            )
-        }
     }
 
     /**
@@ -286,6 +288,13 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
 - "деруни" / "драники" → "potato pancakes"
 - "холодець" / "холодец" → "head cheese"
 - "заливне" / "заливное" → "jellied meat"
+- "лосось слабосоленный" / "лосось слабосолений" → "salmon salted"
+- "сёмга слабосоленная" → "salmon salted"
+- "селедка" / "оселедець" → "herring salted"
+- "скумбрия копченая" → "mackerel smoked"
+- "тунец консервированный" → "tuna canned"
+- "паштет печеночный" / "паштет печінковий" → "liver pate"
+- "паштет" → "pate"
 - "шарлотка" → "apple sponge cake"
 - "запіканка" / "запеканка" → "cottage cheese casserole"
 
@@ -337,23 +346,54 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
             Log.d("Repository", "Processing: '${item.foodNameRu}' / '${item.foodNameEn}', weight=${item.weight}g")
             try {
                 val usdaResult = usdaApi.searchFoods(query = item.foodNameEn)
-                // Relevance filter: USDA description must contain at least one query word
+                // Relevance filter: USDA description must contain the LONGEST query word (main food)
+                // This prevents "lightly salted salmon" matching "Almonds, lightly salted"
                 val queryWords = item.foodNameEn.lowercase().split("\\s+".toRegex())
-                    .filter { it.length >= 3 } // skip short words like "no", "of", "with"
+                    .filter { it.length >= 3 }
+                val mainWord = queryWords.maxByOrNull { it.length } // longest word is most specific
+                val secondaryWords = queryWords.filter { it != mainWord }
                 fun isRelevant(description: String?): Boolean {
-                    if (description == null || queryWords.isEmpty()) return false
+                    if (description == null || mainWord == null) return false
                     val desc = description.lowercase()
-                    return queryWords.any { word -> desc.contains(word) }
+                    // Main word MUST be present
+                    if (!desc.contains(mainWord)) return false
+                    // If there are secondary words, at least one should match too (if 3+ query words)
+                    if (queryWords.size >= 3 && secondaryWords.isNotEmpty()) {
+                        return secondaryWords.any { desc.contains(it) }
+                    }
+                    return true
                 }
                 // Pick best USDA result: prefer Survey/SR Legacy over Branded, require calories > 0, must be relevant
+                // Score by: data type priority + number of matching query words + prefer "NFS"/"raw" over recipes
                 val foodsWithCalories = usdaResult.foods?.filter { f ->
                     f.foodNutrients?.any { it.nutrientId == UsdaFoodNutrient.ENERGY && (it.value ?: 0.0) > 0 } == true
                         && isRelevant(f.description)
                 } ?: emptyList()
-                val food = foodsWithCalories.firstOrNull { it.dataType == "Survey (FNDDS)" }
-                    ?: foodsWithCalories.firstOrNull { it.dataType == "SR Legacy" }
-                    ?: foodsWithCalories.firstOrNull { it.dataType != "Branded" }
-                    ?: foodsWithCalories.firstOrNull()
+                fun scoreFood(f: com.nutrition.tracker.data.api.UsdaFood): Int {
+                    val desc = (f.description ?: "").lowercase()
+                    // Data type priority (higher = better)
+                    val typePriority = when (f.dataType) {
+                        "Survey (FNDDS)" -> 200
+                        "SR Legacy" -> 150
+                        "Branded" -> 50
+                        else -> 100
+                    }
+                    // Word match count bonus (each matching word = +30)
+                    val wordMatchBonus = queryWords.count { desc.contains(it) } * 30
+                    // Prefer generic/plain entries over recipes/mixed dishes
+                    val plainBonus = when {
+                        desc.contains(", nfs") -> 25       // "Not Further Specified" = generic average
+                        desc.contains("raw") -> 20         // raw = plain product
+                        desc.startsWith("fish,") || desc.startsWith("fish ") -> 15 // USDA standard fish entry
+                        desc.contains("salted") || desc.contains("smoked") || desc.contains("canned") -> 10
+                        else -> 0
+                    }
+                    // Penalize compound dish names (short descriptions with no comma = likely a recipe name)
+                    val recipePenalty = if (f.dataType == "Survey (FNDDS)" && !desc.contains(",") && desc.split(" ").size <= 3) -40 else 0
+                    return typePriority + wordMatchBonus + plainBonus + recipePenalty
+                }
+                val food = foodsWithCalories.maxByOrNull { scoreFood(it) }
+                Log.d("Repository", "USDA selected: '${food?.description}' (${food?.dataType}), score=${food?.let { scoreFood(it) }}, from ${foodsWithCalories.size} candidates")
                 if (food?.foodNutrients != null) {
                     val nMap = mutableMapOf<Int, Double>()
                     for (fn in food.foodNutrients) {

@@ -3,9 +3,12 @@ package com.nutrition.tracker.ui.components
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -13,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.nutrition.tracker.data.NutrientTopFoods
 import com.nutrition.tracker.data.db.FoodEntryEntity
 import com.nutrition.tracker.data.model.NutrientData
 import com.nutrition.tracker.ui.theme.ProgressBackground
@@ -29,29 +33,52 @@ fun NutrientProgressBar(
     unit: String,
     modifier: Modifier = Modifier,
     upperRatio: Double = 1.5,
+    nutrientKey: String? = null,
     onClick: (() -> Unit)? = null
 ) {
     if (target <= 0) return
+
+    var showTopFoods by remember { mutableStateOf(false) }
 
     val ratio = current / target
     val progress = ratio.coerceIn(0.0, 1.0).toFloat()
     val percent = (ratio * 100).toInt()
     val color = when {
-        ratio > upperRatio * 1.3 -> ProgressRed       // way over (e.g. >195% for strict, >260% for lenient)
-        ratio > upperRatio -> ProgressOrange            // moderately over (e.g. >150% for strict, >200% for lenient)
-        ratio >= 0.8 -> ProgressGreen                   // optimal (80-100-upperRatio)
-        ratio >= 0.4 -> ProgressYellow                  // low (40-80%)
-        else -> ProgressRed                             // deficiency (<40%)
+        ratio > upperRatio * 1.3 -> ProgressRed
+        ratio > upperRatio -> ProgressOrange
+        ratio >= 0.8 -> ProgressGreen
+        ratio >= 0.4 -> ProgressYellow
+        else -> ProgressRed
     }
 
     val clickModifier = if (onClick != null) modifier.clickable { onClick() } else modifier
 
+    if (showTopFoods && nutrientKey != null) {
+        NutrientTopFoodsDialog(
+            nutrientKey = nutrientKey,
+            nutrientName = name,
+            onDismiss = { showTopFoods = false }
+        )
+    }
+
     Column(modifier = clickModifier.padding(vertical = 3.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(name, style = MaterialTheme.typography.bodySmall)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (nutrientKey != null && NutrientTopFoods.data.containsKey(nutrientKey)) {
+                    Icon(
+                        Icons.Outlined.Info,
+                        contentDescription = "Топ продуктов",
+                        modifier = Modifier.size(14.dp).clickable { showTopFoods = true },
+                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                }
+                Text(name, style = MaterialTheme.typography.bodySmall)
+            }
             Text(
                 "${"%.1f".format(current)} / ${"%.1f".format(target)} $unit ($percent%)",
                 style = MaterialTheme.typography.bodySmall,
@@ -66,6 +93,54 @@ fun NutrientProgressBar(
             trackColor = ProgressBackground,
         )
     }
+}
+
+@Composable
+fun NutrientTopFoodsDialog(
+    nutrientKey: String,
+    nutrientName: String,
+    onDismiss: () -> Unit
+) {
+    val info = NutrientTopFoods.data[nutrientKey] ?: return onDismiss()
+    val sortedFoods = remember(info) { info.foods.sortedByDescending { it.per100g } }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Топ-15: $nutrientName") },
+        text = {
+            Column {
+                Text(
+                    "Содержание на 100 г продукта (% от дневной нормы)",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    itemsIndexed(sortedFoods) { index, food ->
+                        val pct = if (info.dailyValue > 0) (food.per100g / info.dailyValue * 100).toInt() else 0
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                "${index + 1}. ${food.name}",
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(
+                                "${"%.1f".format(food.per100g)} ${info.unit} ($pct% дн.)",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Закрыть") }
+        }
+    )
 }
 
 @Composable
@@ -105,6 +180,7 @@ fun MacrosProgressSection(
                 NutrientProgressBar(
                     name, current, target, unit,
                     upperRatio = upperRatio,
+                    nutrientKey = key,
                     onClick = if (parseNutrients != null) {{ breakdownKey = name to key }} else null
                 )
             }
@@ -163,6 +239,7 @@ fun VitaminsProgressSection(
                 NutrientProgressBar(
                     name, value, normValue, "",
                     upperRatio = upperRatio,
+                    nutrientKey = key,
                     onClick = if (parseNutrients != null) {{ breakdownKey = name to key }} else null
                 )
             }
@@ -225,6 +302,7 @@ fun MineralsProgressSection(
                 NutrientProgressBar(
                     name, value, normValue, "",
                     upperRatio = upperRatio,
+                    nutrientKey = key,
                     onClick = if (parseNutrients != null) {{ breakdownKey = name to key }} else null
                 )
             }
