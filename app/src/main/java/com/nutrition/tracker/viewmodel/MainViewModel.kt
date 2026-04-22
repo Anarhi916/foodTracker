@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.nutrition.tracker.NutritionApp
+import com.nutrition.tracker.data.db.FoodCacheEntity
 import com.nutrition.tracker.data.db.FoodEntryEntity
 import com.nutrition.tracker.data.model.FoodAnalysisResult
 import com.nutrition.tracker.data.model.NutrientData
@@ -28,7 +29,11 @@ data class MainUiState(
     val showBarcodeWeightDialog: Boolean = false,
     val barcodeWeight: String = "",
     val weightDialogSource: String = "barcode",
-    val photoBytes: ByteArray? = null
+    val photoBytes: ByteArray? = null,
+    // Photo edit dialog
+    val showPhotoEditDialog: Boolean = false,
+    val photoFoodName: String = "",
+    val photoWeight: String = "200"
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -73,6 +78,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val recentDates: StateFlow<List<String>> = repo.getRecentDates()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val cachedFoods: StateFlow<List<FoodCacheEntity>> = repo.getAllCachedFoods()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     init {
         viewModelScope.launch { repo.cleanupOldEntries() }
     }
@@ -107,7 +115,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             foodName = result.foodName,
                             weightGrams = weight,
                             nutrients = result.nutrients,
-                            source = "manual"
+                            source = "manual",
+                            fromCache = result.fromCache
                         )
                     }
                     _uiState.value = _uiState.value.copy(
@@ -133,7 +142,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 foodName = food.foodName,
                 weightGrams = state.pendingFoodWeight,
                 nutrients = food.nutrients,
-                source = state.pendingFoodSource
+                source = state.pendingFoodSource,
+                fromCache = food.fromCache
             )
             _uiState.value = _uiState.value.copy(
                 showConfirmDialog = false,
@@ -191,12 +201,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             try {
-                val result = repo.lookupBarcode(barcode)
+                val result = repo.lookupBarcodeWithCache(barcode)
                 if (result != null) {
+                    val (name, enrichedPer100g, fromCache) = result
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        barcodeProductName = result.first,
-                        barcodeNutrientsPer100g = result.second,
+                        barcodeProductName = name,
+                        barcodeNutrientsPer100g = enrichedPer100g,
                         showBarcodeWeightDialog = true,
                         barcodeWeight = "100"
                     )
@@ -231,17 +242,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.value = _uiState.value.copy(
                 showBarcodeWeightDialog = false,
                 barcodeProductName = null,
-                barcodeNutrientsPer100g = null,
-                isLoading = true
+                barcodeNutrientsPer100g = null
             )
-            try {
-                val enriched = repo.enrichNutrientsWithAI(name, nutrients, weight)
-                repo.addFoodEntry(name, weight, enriched, state.weightDialogSource)
-            } catch (e: Exception) {
-                // If AI enrichment fails, save with original nutrients
-                repo.addFoodEntry(name, weight, nutrients, state.weightDialogSource)
-            }
-            _uiState.value = _uiState.value.copy(isLoading = false)
+            // Already enriched and cached in lookupBarcodeWithCache
+            repo.addFoodEntry(name, weight, nutrients, state.weightDialogSource, fromCache = true)
         }
     }
 
@@ -258,20 +262,80 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             try {
-                val result = repo.analyzeFoodPhoto(imageBytes)
-                val estimatedWeight = if (result.weightGrams > 0) result.weightGrams.toInt().toString() else "100"
+                // Step 1: Vision AI identifies food name + weight only
+                val (name, weight) = repo.identifyFoodFromPhoto(imageBytes)
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    barcodeProductName = result.foodName,
-                    barcodeNutrientsPer100g = result.nutrients,
-                    showBarcodeWeightDialog = true,
-                    barcodeWeight = estimatedWeight,
-                    weightDialogSource = "photo"
+                    showPhotoEditDialog = true,
+                    photoFoodName = name,
+                    photoWeight = weight.toInt().toString()
                 )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    error = "Ошибка анализа фото: ${e.message}"
+                    error = "Ошибка распознавания фото: ${e.message}"
+                )
+            }
+        }
+    }
+
+    fun updatePhotoFoodName(name: String) {
+        _uiState.value = _uiState.value.copy(photoFoodName = name)
+    }
+
+    fun updatePhotoWeight(weight: String) {
+        _uiState.value = _uiState.value.copy(photoWeight = weight)
+    }
+
+    fun dismissPhotoEditDialog() {
+        _uiState.value = _uiState.value.copy(showPhotoEditDialog = false)
+    }
+
+    fun confirmPhotoAnalysis() {
+        val state = _uiState.value
+        val foodDesc = state.photoFoodName.trim()
+        val weight = state.photoWeight.trim()
+        if (foodDesc.isBlank()) return
+
+        // Build description like "салат из помидоров 200г"
+        val description = if (weight.isNotBlank()) "$foodDesc ${weight}г" else foodDesc
+
+        _uiState.value = _uiState.value.copy(
+            showPhotoEditDialog = false,
+            isLoading = true,
+            error = null
+        )
+
+        viewModelScope.launch {
+            try {
+                // Reuse the text analysis flow (which includes caching!)
+                val results = repo.analyzeFoodText(description)
+                if (results.size == 1) {
+                    val result = results.first()
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        pendingFood = result,
+                        pendingFoodWeight = if (result.weightGrams > 0) result.weightGrams else (weight.toDoubleOrNull() ?: 200.0),
+                        pendingFoodSource = "photo",
+                        showConfirmDialog = true
+                    )
+                } else {
+                    for (result in results) {
+                        val w = if (result.weightGrams > 0) result.weightGrams else 100.0
+                        repo.addFoodEntry(
+                            foodName = result.foodName,
+                            weightGrams = w,
+                            nutrients = result.nutrients,
+                            source = "photo",
+                            fromCache = result.fromCache
+                        )
+                    }
+                    _uiState.value = _uiState.value.copy(isLoading = false)
+                }
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "Ошибка анализа: ${e.message}"
                 )
             }
         }
@@ -308,5 +372,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
         }
+    }
+
+    fun deleteCachedFood(entry: FoodCacheEntity) {
+        viewModelScope.launch { repo.deleteCachedFood(entry) }
     }
 }

@@ -1,6 +1,7 @@
 package com.nutrition.tracker.data.db
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
 @Entity(tableName = "user_profile")
@@ -29,5 +30,19 @@ data class FoodEntryEntity(
     val weightGrams: Double,
     val nutrientsJson: String,
     val source: String = "manual",
+    val fromCache: Boolean = false,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+@Entity(
+    tableName = "food_cache",
+    indices = [Index(value = ["keyNormalized"], unique = true)]
+)
+data class FoodCacheEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val keyOriginal: String,
+    val keyNormalized: String,
+    val keyEn: String,
+    val nutrientsPer100gJson: String,
     val createdAt: Long = System.currentTimeMillis()
 )

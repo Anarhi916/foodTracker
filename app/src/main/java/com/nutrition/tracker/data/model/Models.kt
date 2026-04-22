@@ -178,5 +178,6 @@ data class FoodAnalysisResult(
     @SerializedName("food_name") val foodName: String = "",
     @SerializedName("food_name_en") val foodNameEn: String = "",
     @SerializedName("weight_grams") val weightGrams: Double = 0.0,
-    val nutrients: NutrientData = NutrientData()
+    val nutrients: NutrientData = NutrientData(),
+    val fromCache: Boolean = false
 )

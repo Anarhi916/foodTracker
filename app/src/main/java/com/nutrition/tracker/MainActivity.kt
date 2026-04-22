@@ -82,6 +82,9 @@ fun NutritionTrackerApp() {
                 },
                 onNavigateToEditProfile = {
                     navController.navigate(Screen.EditProfile.route)
+                },
+                onNavigateToSavedProducts = {
+                    navController.navigate(Screen.SavedProducts.route)
                 }
             )
         }
@@ -113,6 +116,13 @@ fun NutritionTrackerApp() {
 
         composable(Screen.EditProfile.route) {
             EditProfileScreen(
+                viewModel = mainViewModel,
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.SavedProducts.route) {
+            SavedProductsScreen(
                 viewModel = mainViewModel,
                 onBack = { navController.popBackStack() }
             )

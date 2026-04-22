@@ -14,6 +14,7 @@ import com.nutrition.tracker.data.db.FoodEntryEntity
 import com.nutrition.tracker.data.model.NutrientData
 import com.nutrition.tracker.ui.components.*
 import com.nutrition.tracker.viewmodel.MainViewModel
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -22,12 +23,15 @@ fun MainScreen(
     onNavigateToScanner: () -> Unit,
     onNavigateToCamera: () -> Unit,
     onNavigateToHistory: () -> Unit,
-    onNavigateToEditProfile: () -> Unit
+    onNavigateToEditProfile: () -> Unit,
+    onNavigateToSavedProducts: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val entries by viewModel.todayEntries.collectAsStateWithLifecycle()
     val norms by viewModel.dailyNorms.collectAsStateWithLifecycle()
     val totals by viewModel.todayTotals.collectAsStateWithLifecycle()
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
 
     var vitaminsExpanded by remember { mutableStateOf(false) }
     var mineralsExpanded by remember { mutableStateOf(false) }
@@ -52,7 +56,7 @@ fun MainScreen(
         )
     }
 
-    // Barcode/photo weight dialog
+    // Barcode weight dialog
     if (uiState.showBarcodeWeightDialog) {
         BarcodeWeightDialog(
             productName = uiState.barcodeProductName ?: "",
@@ -60,7 +64,19 @@ fun MainScreen(
             onWeightChange = { viewModel.updateBarcodeWeight(it) },
             onConfirm = { viewModel.confirmBarcodeAdd() },
             onDismiss = { viewModel.dismissBarcodeDialog() },
-            title = if (uiState.weightDialogSource == "photo") "Распознано по фото" else "Найден продукт"
+            title = "Найден продукт"
+        )
+    }
+
+    // Photo edit dialog
+    if (uiState.showPhotoEditDialog) {
+        PhotoEditDialog(
+            foodName = uiState.photoFoodName,
+            weight = uiState.photoWeight,
+            onFoodNameChange = { viewModel.updatePhotoFoodName(it) },
+            onWeightChange = { viewModel.updatePhotoWeight(it) },
+            onConfirm = { viewModel.confirmPhotoAnalysis() },
+            onDismiss = { viewModel.dismissPhotoEditDialog() }
         )
     }
 
@@ -73,6 +89,57 @@ fun MainScreen(
         }
     }
 
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet(modifier = Modifier.width(280.dp)) {
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    "Nutrition Tracker",
+                    style = MaterialTheme.typography.headlineSmall,
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp)
+                )
+                HorizontalDivider()
+                NavigationDrawerItem(
+                    icon = { Icon(Icons.Default.Home, contentDescription = null) },
+                    label = { Text("Главная") },
+                    selected = true,
+                    onClick = { scope.launch { drawerState.close() } },
+                    modifier = Modifier.padding(horizontal = 12.dp)
+                )
+                NavigationDrawerItem(
+                    icon = { Icon(Icons.Default.Person, contentDescription = null) },
+                    label = { Text("Профиль") },
+                    selected = false,
+                    onClick = {
+                        scope.launch { drawerState.close() }
+                        onNavigateToEditProfile()
+                    },
+                    modifier = Modifier.padding(horizontal = 12.dp)
+                )
+                NavigationDrawerItem(
+                    icon = { Icon(Icons.Default.Storage, contentDescription = null) },
+                    label = { Text("Сохранённые продукты") },
+                    selected = false,
+                    onClick = {
+                        scope.launch { drawerState.close() }
+                        onNavigateToSavedProducts()
+                    },
+                    modifier = Modifier.padding(horizontal = 12.dp)
+                )
+                NavigationDrawerItem(
+                    icon = { Icon(Icons.Default.History, contentDescription = null) },
+                    label = { Text("История") },
+                    selected = false,
+                    onClick = {
+                        scope.launch { drawerState.close() }
+                        onNavigateToHistory()
+                    },
+                    modifier = Modifier.padding(horizontal = 12.dp)
+                )
+            }
+        }
+    ) {
     Scaffold(
         topBar = {
             TopAppBar(
@@ -81,14 +148,16 @@ fun MainScreen(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary
                 ),
-                actions = {
-                    IconButton(onClick = onNavigateToEditProfile) {
+                navigationIcon = {
+                    IconButton(onClick = { scope.launch { drawerState.open() } }) {
                         Icon(
-                            Icons.Default.Person,
-                            contentDescription = "Профиль",
+                            Icons.Default.Menu,
+                            contentDescription = "Меню",
                             tint = MaterialTheme.colorScheme.onPrimary
                         )
                     }
+                },
+                actions = {
                     IconButton(onClick = onNavigateToHistory) {
                         Icon(
                             Icons.Default.History,
@@ -217,6 +286,7 @@ fun MainScreen(
             }
         }
     }
+    } // ModalNavigationDrawer
 }
 
 @Composable

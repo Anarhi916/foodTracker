@@ -136,8 +136,130 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
 
     fun getRecentDates(): Flow<List<String>> = db.foodEntryDao().getRecentDates()
 
+    // --- Food Cache ---
+    fun getAllCachedFoods() = db.foodCacheDao().getAll()
+
+    suspend fun deleteCachedFood(entry: FoodCacheEntity) = db.foodCacheDao().delete(entry)
+
+    private fun normalizeKey(name: String): String =
+        name.lowercase().trim().replace(Regex("\\s+"), " ")
+
+    private suspend fun findInCache(key: String): Pair<FoodCacheEntity, NutrientData>? {
+        val normalized = normalizeKey(key)
+        val entry = db.foodCacheDao().findByNormalizedKey(normalized) ?: return null
+        val nutrients = gson.fromJson(entry.nutrientsPer100gJson, NutrientData::class.java)
+        return entry to nutrients
+    }
+
+    private suspend fun saveToCache(keyOriginal: String, keyEn: String, nutrientsPer100g: NutrientData) {
+        val normalized = normalizeKey(keyOriginal)
+        val normalizedEn = normalizeKey(keyEn)
+        // Save under original language key
+        db.foodCacheDao().insert(
+            FoodCacheEntity(
+                keyOriginal = keyOriginal,
+                keyNormalized = normalized,
+                keyEn = keyEn,
+                nutrientsPer100gJson = gson.toJson(nutrientsPer100g)
+            )
+        )
+        // Also save under English key if different
+        if (normalizedEn != normalized && normalizedEn.isNotBlank()) {
+            db.foodCacheDao().insert(
+                FoodCacheEntity(
+                    keyOriginal = keyEn,
+                    keyNormalized = normalizedEn,
+                    keyEn = keyEn,
+                    nutrientsPer100gJson = gson.toJson(nutrientsPer100g)
+                )
+            )
+        }
+    }
+
+    /**
+     * Parse food input locally: split by comma, "и", "і" separators.
+     * Each item: "food name 150г" or "food name 150 г" or "food name"
+     */
+    private fun parseLocalFoodInput(input: String): List<Pair<String, Double>> {
+        // Split by comma, " и ", " і " (with spaces around conjunctions)
+        val items = input.split(Regex("""\s*,\s*|\s+и\s+|\s+і\s+""", RegexOption.IGNORE_CASE))
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+
+        return items.map { item ->
+            // Extract weight: number followed by optional space and unit (г, гр, грамм, g, ml, мл, кг, kg)
+            val weightRegex = Regex("""(\d+(?:[.,]\d+)?)\s*(г|гр|грамм|g|ml|мл|кг|kg)\b""", RegexOption.IGNORE_CASE)
+            val match = weightRegex.find(item)
+            val weight = if (match != null) {
+                var w = match.groupValues[1].replace(",", ".").toDoubleOrNull() ?: 0.0
+                val unit = match.groupValues[2].lowercase()
+                if (unit == "кг" || unit == "kg") w *= 1000
+                w
+            } else 0.0
+            // Food name = item minus the weight part
+            val name = if (match != null) {
+                item.removeRange(match.range).trim()
+            } else {
+                item.trim()
+            }
+            name to weight
+        }.filter { it.first.isNotBlank() }
+    }
+
     suspend fun analyzeFoodText(foodDescription: String): List<FoodAnalysisResult> {
-        // Step 1: AI identifies all foods with names (RU + EN) and weights
+        // Step 0: Try local parse + cache lookup first
+        val localParsed = parseLocalFoodInput(foodDescription)
+        Log.d("Repository", "Local parse: ${localParsed.size} items: $localParsed")
+
+        data class PendingFood(
+            val foodNameRu: String,
+            val foodNameEn: String,
+            val weight: Double,
+            var nutrientsPer100g: NutrientData? = null,
+            var fromCache: Boolean = false
+        )
+
+        val cachedResults = mutableListOf<PendingFood>()
+        val uncachedItems = mutableListOf<Pair<String, Double>>()
+
+        for ((name, weight) in localParsed) {
+            val cached = findInCache(name)
+            if (cached != null) {
+                Log.d("Repository", "Cache HIT for '$name'")
+                cachedResults.add(PendingFood(
+                    foodNameRu = name,
+                    foodNameEn = cached.first.keyEn,
+                    weight = if (weight > 0) weight else 100.0,
+                    nutrientsPer100g = cached.second,
+                    fromCache = true
+                ))
+            } else {
+                uncachedItems.add(name to weight)
+            }
+        }
+
+        // If everything was cached, return immediately
+        if (uncachedItems.isEmpty() && cachedResults.isNotEmpty()) {
+            Log.d("Repository", "All ${cachedResults.size} items from cache!")
+            return cachedResults.map { item ->
+                val factor = item.weight / 100.0
+                FoodAnalysisResult(
+                    foodName = item.foodNameRu,
+                    foodNameEn = item.foodNameEn,
+                    weightGrams = item.weight,
+                    nutrients = item.nutrientsPer100g!! * factor,
+                    fromCache = true
+                )
+            }
+        }
+
+        // Step 1: AI identifies uncached foods with names (RU + EN) and weights
+        val descriptionForAi = if (uncachedItems.isNotEmpty()) {
+            uncachedItems.joinToString(", ") { (name, w) ->
+                if (w > 0) "$name ${w.toInt()}г" else name
+            }
+        } else foodDescription
+
         val identifyPrompt = """
 Определи ВСЕ продукты и их вес из описания. Описание может быть на русском, украинском или другом языке.
 Если указано количество штук — рассчитай общий вес. Если вес не указан — оцени типичную порцию.
@@ -167,7 +289,7 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
 - "шарлотка" → "apple sponge cake"
 - "запіканка" / "запеканка" → "cottage cheese casserole"
 
-Описание: $foodDescription
+Описание: $descriptionForAi
 
 Верни ТОЛЬКО JSON массив (даже если продукт один):
 [{"food_name": "<название НА ЯЗЫКЕ ВВОДА>", "food_name_en": "<EXACT English translation for USDA search>", "weight_grams": <число>}]
@@ -182,27 +304,36 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
 
         val identities: List<FoodIdentity> = parseIdentityList(identifyText)
 
-        if (identities.isEmpty()) {
+        if (identities.isEmpty() && cachedResults.isEmpty()) {
             throw Exception("Не удалось распознать продукты из описания")
         }
 
-        // Step 2: USDA lookup for each food (REST calls, no AI)
-        data class PendingFood(
-            val foodNameRu: String,
-            val foodNameEn: String,
-            val weight: Double,
-            var usdaNutrients: NutrientData? = null
-        )
+        // Check cache again by English key (AI may have translated to a cached key)
+        val aiPending = mutableListOf<PendingFood>()
+        for (id in identities) {
+            val nameRu = id.foodName.ifBlank { descriptionForAi }
+            val nameEn = id.foodNameEn.ifBlank { id.foodName }
+            val weight = if (id.weightGrams > 0) id.weightGrams else 100.0
 
-        val pending = identities.map { id ->
-            PendingFood(
-                foodNameRu = id.foodName.ifBlank { foodDescription },
-                foodNameEn = id.foodNameEn.ifBlank { id.foodName },
-                weight = if (id.weightGrams > 0) id.weightGrams else 100.0
-            )
+            // Try cache by English key
+            val cachedByEn = findInCache(nameEn)
+            if (cachedByEn != null) {
+                Log.d("Repository", "Cache HIT by EN key '$nameEn' for '$nameRu'")
+                // Also save under original name for next time
+                try { saveToCache(nameRu, nameEn, cachedByEn.second) } catch (_: Exception) {}
+                cachedResults.add(PendingFood(
+                    foodNameRu = nameRu, foodNameEn = nameEn,
+                    weight = weight, nutrientsPer100g = cachedByEn.second, fromCache = true
+                ))
+            } else {
+                aiPending.add(PendingFood(
+                    foodNameRu = nameRu, foodNameEn = nameEn, weight = weight
+                ))
+            }
         }
 
-        for ((idx, item) in pending.withIndex()) {
+        // Step 2: USDA lookup for uncached foods
+        for ((idx, item) in aiPending.withIndex()) {
             Log.d("Repository", "Processing: '${item.foodNameRu}' / '${item.foodNameEn}', weight=${item.weight}g")
             try {
                 val usdaResult = usdaApi.searchFoods(query = item.foodNameEn)
@@ -229,23 +360,23 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
                         if (fn.nutrientId != null && fn.value != null) nMap[fn.nutrientId] = fn.value
                     }
                     val N = UsdaFoodNutrient
-                    val f = item.weight / 100.0
-                    val n = NutrientData(
-                        calories = (nMap[N.ENERGY] ?: 0.0) * f, protein = (nMap[N.PROTEIN] ?: 0.0) * f,
-                        fat = (nMap[N.FAT] ?: 0.0) * f, carbs = (nMap[N.CARBS] ?: 0.0) * f,
-                        fiber = (nMap[N.FIBER] ?: 0.0) * f, vitaminA = (nMap[N.VITAMIN_A] ?: 0.0) * f,
-                        vitaminB1 = (nMap[N.VITAMIN_B1] ?: 0.0) * f, vitaminB2 = (nMap[N.VITAMIN_B2] ?: 0.0) * f,
-                        vitaminB3 = (nMap[N.VITAMIN_B3] ?: 0.0) * f, vitaminB5 = (nMap[N.VITAMIN_B5] ?: 0.0) * f,
-                        vitaminB6 = (nMap[N.VITAMIN_B6] ?: 0.0) * f, vitaminB7 = (nMap[N.VITAMIN_B7] ?: 0.0) * f,
-                        vitaminB9 = (nMap[N.VITAMIN_B9] ?: 0.0) * f, vitaminB12 = (nMap[N.VITAMIN_B12] ?: 0.0) * f,
-                        vitaminC = (nMap[N.VITAMIN_C] ?: 0.0) * f, vitaminD = (nMap[N.VITAMIN_D] ?: 0.0) * f,
-                        vitaminE = (nMap[N.VITAMIN_E] ?: 0.0) * f, vitaminK = (nMap[N.VITAMIN_K] ?: 0.0) * f,
-                        calcium = (nMap[N.CALCIUM] ?: 0.0) * f, iron = (nMap[N.IRON] ?: 0.0) * f,
-                        magnesium = (nMap[N.MAGNESIUM] ?: 0.0) * f, phosphorus = (nMap[N.PHOSPHORUS] ?: 0.0) * f,
-                        potassium = (nMap[N.POTASSIUM] ?: 0.0) * f, sodium = (nMap[N.SODIUM] ?: 0.0) * f,
-                        zinc = (nMap[N.ZINC] ?: 0.0) * f, copper = (nMap[N.COPPER] ?: 0.0) * f,
-                        manganese = (nMap[N.MANGANESE] ?: 0.0) * f, selenium = (nMap[N.SELENIUM] ?: 0.0) * f,
-                        iodine = (nMap[N.IODINE] ?: 0.0) * f, chromium = (nMap[N.CHROMIUM] ?: 0.0) * f
+                    // Store per 100g for caching
+                    val per100g = NutrientData(
+                        calories = nMap[N.ENERGY] ?: 0.0, protein = nMap[N.PROTEIN] ?: 0.0,
+                        fat = nMap[N.FAT] ?: 0.0, carbs = nMap[N.CARBS] ?: 0.0,
+                        fiber = nMap[N.FIBER] ?: 0.0, vitaminA = nMap[N.VITAMIN_A] ?: 0.0,
+                        vitaminB1 = nMap[N.VITAMIN_B1] ?: 0.0, vitaminB2 = nMap[N.VITAMIN_B2] ?: 0.0,
+                        vitaminB3 = nMap[N.VITAMIN_B3] ?: 0.0, vitaminB5 = nMap[N.VITAMIN_B5] ?: 0.0,
+                        vitaminB6 = nMap[N.VITAMIN_B6] ?: 0.0, vitaminB7 = nMap[N.VITAMIN_B7] ?: 0.0,
+                        vitaminB9 = nMap[N.VITAMIN_B9] ?: 0.0, vitaminB12 = nMap[N.VITAMIN_B12] ?: 0.0,
+                        vitaminC = nMap[N.VITAMIN_C] ?: 0.0, vitaminD = nMap[N.VITAMIN_D] ?: 0.0,
+                        vitaminE = nMap[N.VITAMIN_E] ?: 0.0, vitaminK = nMap[N.VITAMIN_K] ?: 0.0,
+                        calcium = nMap[N.CALCIUM] ?: 0.0, iron = nMap[N.IRON] ?: 0.0,
+                        magnesium = nMap[N.MAGNESIUM] ?: 0.0, phosphorus = nMap[N.PHOSPHORUS] ?: 0.0,
+                        potassium = nMap[N.POTASSIUM] ?: 0.0, sodium = nMap[N.SODIUM] ?: 0.0,
+                        zinc = nMap[N.ZINC] ?: 0.0, copper = nMap[N.COPPER] ?: 0.0,
+                        manganese = nMap[N.MANGANESE] ?: 0.0, selenium = nMap[N.SELENIUM] ?: 0.0,
+                        iodine = nMap[N.IODINE] ?: 0.0, chromium = nMap[N.CHROMIUM] ?: 0.0
                     )
                     // Correct US enrichment bias for flour-based foods
                     // In the US, flour is fortified with B9, B1, B2, B3, iron — not typical for Eastern Europe
@@ -261,24 +392,24 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
                     val isFlourBased = flourKeywords.any { foodDesc.contains(it) }
                     val corrected = if (isFlourBased) {
                         Log.d("Repository", "Applying enrichment correction for flour-based: ${food.description}")
-                        n.copy(
-                            vitaminB1 = n.vitaminB1 * 0.17,  // enriched ~0.6mg → natural ~0.1mg
-                            vitaminB2 = n.vitaminB2 * 0.10,  // enriched ~0.4mg → natural ~0.04mg
-                            vitaminB3 = n.vitaminB3 * 0.22,  // enriched ~5.9mg → natural ~1.3mg
-                            vitaminB9 = n.vitaminB9 * 0.17,  // enriched ~150mcg → natural ~25mcg
-                            iron = n.iron * 0.26              // enriched ~4.6mg → natural ~1.2mg
+                        per100g.copy(
+                            vitaminB1 = per100g.vitaminB1 * 0.17,
+                            vitaminB2 = per100g.vitaminB2 * 0.10,
+                            vitaminB3 = per100g.vitaminB3 * 0.22,
+                            vitaminB9 = per100g.vitaminB9 * 0.17,
+                            iron = per100g.iron * 0.26
                         )
-                    } else n
+                    } else per100g
 
                     // Sanity check: macros from fat+protein+carbs shouldn't exceed reported calories by >30%
-                    val macroCalories = (nMap[N.PROTEIN] ?: 0.0) * 4 + (nMap[N.FAT] ?: 0.0) * 9 + (nMap[N.CARBS] ?: 0.0) * 4
-                    val reportedCalories = nMap[N.ENERGY] ?: 0.0
+                    val macroCalories = corrected.protein * 4 + corrected.fat * 9 + corrected.carbs * 4
+                    val reportedCalories = corrected.calories
                     val sane = reportedCalories > 0 && (macroCalories <= reportedCalories * 1.3)
                     Log.d("Repository", "USDA '${food.description}' [${food.dataType}]: " +
                         "cal=${corrected.calories}, p=${corrected.protein}, f=${corrected.fat}, c=${corrected.carbs} " +
-                        "(per100g: fat=${nMap[N.FAT] ?: 0.0}) sane=$sane flourCorrected=$isFlourBased")
+                        "sane=$sane flourCorrected=$isFlourBased")
                     if (sane && (corrected.calories > 0 || corrected.protein > 0 || corrected.fat > 0 || corrected.carbs > 0)) {
-                        item.usdaNutrients = corrected
+                        item.nutrientsPer100g = corrected
                     }
                 }
             } catch (e: Exception) {
@@ -287,7 +418,7 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
         }
 
         // Step 3: ONE batch AI call for ALL items that need nutrients (failed USDA)
-        val needAi = pending.filter { it.usdaNutrients == null }
+        val needAi = aiPending.filter { it.nutrientsPer100g == null }
         if (needAi.isNotEmpty()) {
             Log.d("Repository", "Batch AI for ${needAi.size} items without USDA data")
             try {
@@ -327,25 +458,24 @@ Return format (array of ${needAi.size} objects):
                     if (listIdx < parsed.size) {
                         val m = parsed[listIdx]
                         fun v(key: String) = (m[key] as? Number)?.toDouble() ?: 0.0
-                        val f = item.weight / 100.0
-                        item.usdaNutrients = NutrientData(
-                            calories = v("calories") * f, protein = v("protein") * f,
-                            fat = v("fat") * f, carbs = v("carbs") * f, fiber = v("fiber") * f,
-                            vitaminA = v("vitamin_a") * f, vitaminB1 = v("vitamin_b1") * f,
-                            vitaminB2 = v("vitamin_b2") * f, vitaminB3 = v("vitamin_b3") * f,
-                            vitaminB5 = v("vitamin_b5") * f, vitaminB6 = v("vitamin_b6") * f,
-                            vitaminB7 = v("vitamin_b7") * f, vitaminB9 = v("vitamin_b9") * f,
-                            vitaminB12 = v("vitamin_b12") * f, vitaminC = v("vitamin_c") * f,
-                            vitaminD = v("vitamin_d") * f, vitaminE = v("vitamin_e") * f,
-                            vitaminK = v("vitamin_k") * f, calcium = v("calcium") * f,
-                            iron = v("iron") * f, magnesium = v("magnesium") * f,
-                            phosphorus = v("phosphorus") * f, potassium = v("potassium") * f,
-                            sodium = v("sodium") * f, zinc = v("zinc") * f,
-                            copper = v("copper") * f, manganese = v("manganese") * f,
-                            selenium = v("selenium") * f, iodine = v("iodine") * f,
-                            chromium = v("chromium") * f
+                        item.nutrientsPer100g = NutrientData(
+                            calories = v("calories"), protein = v("protein"),
+                            fat = v("fat"), carbs = v("carbs"), fiber = v("fiber"),
+                            vitaminA = v("vitamin_a"), vitaminB1 = v("vitamin_b1"),
+                            vitaminB2 = v("vitamin_b2"), vitaminB3 = v("vitamin_b3"),
+                            vitaminB5 = v("vitamin_b5"), vitaminB6 = v("vitamin_b6"),
+                            vitaminB7 = v("vitamin_b7"), vitaminB9 = v("vitamin_b9"),
+                            vitaminB12 = v("vitamin_b12"), vitaminC = v("vitamin_c"),
+                            vitaminD = v("vitamin_d"), vitaminE = v("vitamin_e"),
+                            vitaminK = v("vitamin_k"), calcium = v("calcium"),
+                            iron = v("iron"), magnesium = v("magnesium"),
+                            phosphorus = v("phosphorus"), potassium = v("potassium"),
+                            sodium = v("sodium"), zinc = v("zinc"),
+                            copper = v("copper"), manganese = v("manganese"),
+                            selenium = v("selenium"), iodine = v("iodine"),
+                            chromium = v("chromium")
                         )
-                        Log.d("Repository", "Batch AI '${item.foodNameEn}': cal=${item.usdaNutrients!!.calories}")
+                        Log.d("Repository", "Batch AI '${item.foodNameEn}': cal/100g=${item.nutrientsPer100g!!.calories}")
                     }
                 }
             } catch (e: Exception) {
@@ -354,10 +484,10 @@ Return format (array of ${needAi.size} objects):
         }
 
         // Step 4: ONE batch AI call to fill missing micros for ALL items that have macros
-        val needMicros = pending.filter { it.usdaNutrients != null }
+        val needMicros = aiPending.filter { it.nutrientsPer100g != null }
         if (needMicros.isNotEmpty()) {
             val itemsWithMissing = needMicros.filter { item ->
-                val n = item.usdaNutrients!!
+                val n = item.nutrientsPer100g!!
                 n.vitaminA == 0.0 || n.vitaminC == 0.0 || n.calcium == 0.0 || n.iron == 0.0
             }
             if (itemsWithMissing.isNotEmpty()) {
@@ -397,34 +527,33 @@ Return format (array of ${itemsWithMissing.size} objects):
                         if (listIdx < parsed.size) {
                             val m = parsed[listIdx]
                             fun v(key: String) = (m[key] as? Number)?.toDouble() ?: 0.0
-                            val f = item.weight / 100.0
-                            val n = item.usdaNutrients!!
-                            item.usdaNutrients = n.copy(
-                                vitaminA = if (n.vitaminA == 0.0) v("vitamin_a") * f else n.vitaminA,
-                                vitaminB1 = if (n.vitaminB1 == 0.0) v("vitamin_b1") * f else n.vitaminB1,
-                                vitaminB2 = if (n.vitaminB2 == 0.0) v("vitamin_b2") * f else n.vitaminB2,
-                                vitaminB3 = if (n.vitaminB3 == 0.0) v("vitamin_b3") * f else n.vitaminB3,
-                                vitaminB5 = if (n.vitaminB5 == 0.0) v("vitamin_b5") * f else n.vitaminB5,
-                                vitaminB6 = if (n.vitaminB6 == 0.0) v("vitamin_b6") * f else n.vitaminB6,
-                                vitaminB7 = if (n.vitaminB7 == 0.0) v("vitamin_b7") * f else n.vitaminB7,
-                                vitaminB9 = if (n.vitaminB9 == 0.0) v("vitamin_b9") * f else n.vitaminB9,
-                                vitaminB12 = if (n.vitaminB12 == 0.0) v("vitamin_b12") * f else n.vitaminB12,
-                                vitaminC = if (n.vitaminC == 0.0) v("vitamin_c") * f else n.vitaminC,
-                                vitaminD = if (n.vitaminD == 0.0) v("vitamin_d") * f else n.vitaminD,
-                                vitaminE = if (n.vitaminE == 0.0) v("vitamin_e") * f else n.vitaminE,
-                                vitaminK = if (n.vitaminK == 0.0) v("vitamin_k") * f else n.vitaminK,
-                                calcium = if (n.calcium == 0.0) v("calcium") * f else n.calcium,
-                                iron = if (n.iron == 0.0) v("iron") * f else n.iron,
-                                magnesium = if (n.magnesium == 0.0) v("magnesium") * f else n.magnesium,
-                                phosphorus = if (n.phosphorus == 0.0) v("phosphorus") * f else n.phosphorus,
-                                potassium = if (n.potassium == 0.0) v("potassium") * f else n.potassium,
-                                sodium = if (n.sodium == 0.0) v("sodium") * f else n.sodium,
-                                zinc = if (n.zinc == 0.0) v("zinc") * f else n.zinc,
-                                copper = if (n.copper == 0.0) v("copper") * f else n.copper,
-                                manganese = if (n.manganese == 0.0) v("manganese") * f else n.manganese,
-                                selenium = if (n.selenium == 0.0) v("selenium") * f else n.selenium,
-                                iodine = if (n.iodine == 0.0) v("iodine") * f else n.iodine,
-                                chromium = if (n.chromium == 0.0) v("chromium") * f else n.chromium
+                            val n = item.nutrientsPer100g!!
+                            item.nutrientsPer100g = n.copy(
+                                vitaminA = if (n.vitaminA == 0.0) v("vitamin_a") else n.vitaminA,
+                                vitaminB1 = if (n.vitaminB1 == 0.0) v("vitamin_b1") else n.vitaminB1,
+                                vitaminB2 = if (n.vitaminB2 == 0.0) v("vitamin_b2") else n.vitaminB2,
+                                vitaminB3 = if (n.vitaminB3 == 0.0) v("vitamin_b3") else n.vitaminB3,
+                                vitaminB5 = if (n.vitaminB5 == 0.0) v("vitamin_b5") else n.vitaminB5,
+                                vitaminB6 = if (n.vitaminB6 == 0.0) v("vitamin_b6") else n.vitaminB6,
+                                vitaminB7 = if (n.vitaminB7 == 0.0) v("vitamin_b7") else n.vitaminB7,
+                                vitaminB9 = if (n.vitaminB9 == 0.0) v("vitamin_b9") else n.vitaminB9,
+                                vitaminB12 = if (n.vitaminB12 == 0.0) v("vitamin_b12") else n.vitaminB12,
+                                vitaminC = if (n.vitaminC == 0.0) v("vitamin_c") else n.vitaminC,
+                                vitaminD = if (n.vitaminD == 0.0) v("vitamin_d") else n.vitaminD,
+                                vitaminE = if (n.vitaminE == 0.0) v("vitamin_e") else n.vitaminE,
+                                vitaminK = if (n.vitaminK == 0.0) v("vitamin_k") else n.vitaminK,
+                                calcium = if (n.calcium == 0.0) v("calcium") else n.calcium,
+                                iron = if (n.iron == 0.0) v("iron") else n.iron,
+                                magnesium = if (n.magnesium == 0.0) v("magnesium") else n.magnesium,
+                                phosphorus = if (n.phosphorus == 0.0) v("phosphorus") else n.phosphorus,
+                                potassium = if (n.potassium == 0.0) v("potassium") else n.potassium,
+                                sodium = if (n.sodium == 0.0) v("sodium") else n.sodium,
+                                zinc = if (n.zinc == 0.0) v("zinc") else n.zinc,
+                                copper = if (n.copper == 0.0) v("copper") else n.copper,
+                                manganese = if (n.manganese == 0.0) v("manganese") else n.manganese,
+                                selenium = if (n.selenium == 0.0) v("selenium") else n.selenium,
+                                iodine = if (n.iodine == 0.0) v("iodine") else n.iodine,
+                                chromium = if (n.chromium == 0.0) v("chromium") else n.chromium
                             )
                         }
                     }
@@ -434,13 +563,27 @@ Return format (array of ${itemsWithMissing.size} objects):
             }
         }
 
-        // Build final results
-        return pending.map { item ->
+        // Step 5: Cache all newly resolved foods and build final results
+        for (item in aiPending) {
+            val per100g = item.nutrientsPer100g ?: continue
+            try {
+                saveToCache(item.foodNameRu, item.foodNameEn, per100g)
+                Log.d("Repository", "Cached '${item.foodNameRu}' / '${item.foodNameEn}'")
+            } catch (e: Exception) {
+                Log.w("Repository", "Failed to cache '${item.foodNameRu}': ${e.message}")
+            }
+        }
+
+        val allItems = cachedResults + aiPending
+        return allItems.map { item ->
+            val per100g = item.nutrientsPer100g ?: NutrientData()
+            val factor = item.weight / 100.0
             FoodAnalysisResult(
                 foodName = item.foodNameRu,
                 foodNameEn = item.foodNameEn,
                 weightGrams = item.weight,
-                nutrients = item.usdaNutrients ?: NutrientData()
+                nutrients = per100g * factor,
+                fromCache = item.fromCache
             )
         }
     }
@@ -635,6 +778,46 @@ Return ONLY JSON, e.g.: {"vitamin_a": 45, "calcium": 11}
         }
     }
 
+    suspend fun identifyFoodFromPhoto(imageBytes: ByteArray): Pair<String, Double> {
+        val base64 = Base64.encodeToString(imageBytes, Base64.NO_WRAP)
+        val prompt = """
+Ты профессиональный диетолог. Посмотри на фото еды и определи:
+1. Название блюда/продуктов НА РУССКОМ языке (подробно, включая ингредиенты)
+2. Оценку общего веса порции в граммах
+
+Примеры названий:
+- "салат из помидоров и огурцов с майонезом"
+- "гречка с куриной котлетой"
+- "борщ со сметаной"
+
+Верни ТОЛЬКО JSON:
+{"food_name": "<название на русском>", "weight_grams": <число>}
+""".trimIndent()
+
+        val contentParts = listOf(
+            OpenRouterContentPart(type = "text", text = prompt),
+            OpenRouterContentPart(
+                type = "image_url",
+                imageUrl = OpenRouterImageUrl(url = "data:image/jpeg;base64,$base64")
+            )
+        )
+
+        val messages = listOf(OpenRouterMessage(role = "user", content = contentParts))
+        val text = callOpenRouterWithRetry(messages = messages, models = visionModels)
+        val json = extractJsonContent(text)
+        Log.d("Repository", "Photo identify response: $json")
+
+        return try {
+            val map = gson.fromJson(json, Map::class.java) as Map<String, Any>
+            val name = (map["food_name"] as? String) ?: "Блюдо"
+            val weight = (map["weight_grams"] as? Number)?.toDouble() ?: 200.0
+            Pair(name, weight)
+        } catch (e: Exception) {
+            Log.w("Repository", "Failed to parse photo identify: ${e.message}")
+            Pair("Блюдо", 200.0)
+        }
+    }
+
     suspend fun analyzeFoodPhoto(imageBytes: ByteArray): FoodAnalysisResult {
         val base64 = Base64.encodeToString(imageBytes, Base64.NO_WRAP)
         val prompt = """
@@ -675,14 +858,15 @@ Return ONLY JSON, e.g.: {"vitamin_a": 45, "calcium": 11}
         return fillMissingMicrosWithAI(nutrients, foodName, weight)
     }
 
-    suspend fun addFoodEntry(foodName: String, weightGrams: Double, nutrients: NutrientData, source: String = "manual") {
+    suspend fun addFoodEntry(foodName: String, weightGrams: Double, nutrients: NutrientData, source: String = "manual", fromCache: Boolean = false) {
         db.foodEntryDao().insert(
             FoodEntryEntity(
                 date = todayDate(),
                 foodName = foodName,
                 weightGrams = weightGrams,
                 nutrientsJson = gson.toJson(nutrients),
-                source = source
+                source = source,
+                fromCache = fromCache
             )
         )
     }
@@ -754,6 +938,43 @@ Return ONLY JSON, e.g.: {"vitamin_a": 45, "calcium": 11}
             Log.e("Repository", "Barcode lookup failed", e)
             null
         }
+    }
+
+    /**
+     * Full barcode flow: cache check → OFF API → AI enrich micros → cache enriched result.
+     * Returns (name, enrichedNutrientsPer100g) or null if not found.
+     */
+    suspend fun lookupBarcodeWithCache(barcode: String): Triple<String, NutrientData, Boolean>? {
+        // 1. Check cache by barcode
+        val cachedByBarcode = findInCache("barcode:$barcode")
+        if (cachedByBarcode != null) {
+            Log.d("Repository", "Barcode cache HIT for $barcode: ${cachedByBarcode.first.keyEn}")
+            return Triple(cachedByBarcode.first.keyEn, cachedByBarcode.second, true)
+        }
+
+        // 2. OFF API lookup
+        val result = lookupBarcode(barcode) ?: return null
+        val (name, per100g) = result
+
+        // 3. AI enrich missing micros (per 100g)
+        val enrichedPer100g = try {
+            val enrichedScaled = enrichNutrientsWithAI(name, per100g, 100.0)
+            enrichedScaled  // already per 100g since weight=100
+        } catch (e: Exception) {
+            Log.w("Repository", "AI enrichment failed for barcode $barcode: ${e.message}")
+            per100g
+        }
+
+        // 4. Cache the enriched result
+        try {
+            saveToCache(name, name, enrichedPer100g)
+            saveToCache("barcode:$barcode", name, enrichedPer100g)
+            Log.d("Repository", "Cached enriched barcode $barcode as '$name'")
+        } catch (e: Exception) {
+            Log.w("Repository", "Failed to cache barcode: ${e.message}")
+        }
+
+        return Triple(name, enrichedPer100g, false)
     }
 
     // --- OpenRouter helpers with retry/fallback ---

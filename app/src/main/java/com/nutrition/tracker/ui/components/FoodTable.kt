@@ -3,6 +3,7 @@ package com.nutrition.tracker.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -13,6 +14,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -22,6 +24,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.nutrition.tracker.data.db.FoodEntryEntity
 import com.nutrition.tracker.data.model.NutrientData
+import com.nutrition.tracker.ui.theme.ProgressOrange
 
 @Composable
 fun FoodEntriesTable(
@@ -139,13 +142,26 @@ fun FoodEntriesTable(
                         .padding(horizontal = 12.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        entry.foodName,
-                        style = MaterialTheme.typography.bodySmall,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(2.5f)
-                    )
+                    Row(
+                        modifier = Modifier.weight(2.5f),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (entry.fromCache) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(ProgressOrange)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                        }
+                        Text(
+                            entry.foodName,
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                     if (editMode) {
                         val weightText = editedWeights[entry.id] ?: entry.weightGrams.toInt().toString()
                         BasicTextField(

@@ -137,6 +137,52 @@ fun BarcodeWeightDialog(
 }
 
 @Composable
+fun PhotoEditDialog(
+    foodName: String,
+    weight: String,
+    onFoodNameChange: (String) -> Unit,
+    onWeightChange: (String) -> Unit,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Распознано по фото") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "Проверьте и при необходимости отредактируйте:",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = foodName,
+                    onValueChange = onFoodNameChange,
+                    label = { Text("Блюдо / продукты") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 2,
+                    maxLines = 4
+                )
+                OutlinedTextField(
+                    value = weight,
+                    onValueChange = onWeightChange,
+                    label = { Text("Вес порции (г)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = onConfirm) { Text("Анализировать") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Отмена") }
+        }
+    )
+}
+
+@Composable
 private fun NutrientRow(name: String, value: String) {
     Row(
         modifier = Modifier.fillMaxWidth(),
