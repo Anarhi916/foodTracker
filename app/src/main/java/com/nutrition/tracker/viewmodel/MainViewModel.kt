@@ -308,8 +308,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             try {
-                // Reuse the text analysis flow (which includes caching!)
-                val results = repo.analyzeFoodText(description)
+                // Reuse the text analysis flow but bypass cache for photo analysis
+                val results = repo.analyzeFoodText(description, useCache = false)
                 if (results.size == 1) {
                     val result = results.first()
                     _uiState.value = _uiState.value.copy(

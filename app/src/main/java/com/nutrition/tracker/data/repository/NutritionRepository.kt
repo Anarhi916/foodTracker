@@ -208,7 +208,7 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
         }.filter { it.first.isNotBlank() }
     }
 
-    suspend fun analyzeFoodText(foodDescription: String): List<FoodAnalysisResult> {
+    suspend fun analyzeFoodText(foodDescription: String, useCache: Boolean = true): List<FoodAnalysisResult> {
         // Step 0: Try local parse + cache lookup first
         val localParsed = parseLocalFoodInput(foodDescription)
         Log.d("Repository", "Local parse: ${localParsed.size} items: $localParsed")
@@ -225,7 +225,7 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
         val uncachedItems = mutableListOf<Pair<String, Double>>()
 
         for ((name, weight) in localParsed) {
-            val cached = findInCache(name)
+            val cached = if (useCache) findInCache(name) else null
             if (cached != null) {
                 Log.d("Repository", "Cache HIT for '$name'")
                 cachedResults.add(PendingFood(
@@ -331,7 +331,7 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
             val weight = if (id.weightGrams > 0) id.weightGrams else 100.0
 
             // Try cache by English key
-            val cachedByEn = findInCache(nameEn)
+            val cachedByEn = if (useCache) findInCache(nameEn) else null
             if (cachedByEn != null) {
                 Log.d("Repository", "Cache HIT by EN key '$nameEn' for '$nameRu'")
                 // Also save under original name for next time
