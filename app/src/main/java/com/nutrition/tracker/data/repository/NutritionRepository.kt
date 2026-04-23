@@ -295,6 +295,12 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
 - "тунец консервированный" → "tuna canned"
 - "паштет печеночный" / "паштет печінковий" → "liver pate"
 - "паштет" → "pate"
+- "кава" / "кофе" → "coffee brewed"
+- "кава з молоком" / "кофе с молоком" → "coffee with milk"
+- "капучіно" / "капучино" → "coffee cappuccino"
+- "латте" / "лате" → "coffee latte"
+- "чай" / "чай чорний" / "чай черный" → "tea brewed"
+- "чай зелений" / "чай зеленый" → "green tea brewed"
 - "шарлотка" → "apple sponge cake"
 - "запіканка" / "запеканка" → "cottage cheese casserole"
 
