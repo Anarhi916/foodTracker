@@ -179,12 +179,15 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
     }
 
     /**
-     * Parse food input locally: split by comma, "и", "і" separators.
+     * Parse food input locally: split by comma only.
+     * Conjunctions "и"/"і" are NOT used as separators because they appear
+     * inside compound dish names (e.g. "салат из тунца и авокадо").
+     * The AI step handles multi-item disambiguation correctly.
      * Each item: "food name 150г" or "food name 150 г" or "food name"
      */
     private fun parseLocalFoodInput(input: String): List<Pair<String, Double>> {
-        // Split by comma, " и ", " і " (with spaces around conjunctions)
-        val items = input.split(Regex("""\s*,\s*|\s+и\s+|\s+і\s+""", RegexOption.IGNORE_CASE))
+        // Split by comma only — "и"/"і" can be part of a dish name
+        val items = input.split(Regex("""\s*,\s*"""))
             .map { it.trim() }
             .filter { it.isNotBlank() }
 
