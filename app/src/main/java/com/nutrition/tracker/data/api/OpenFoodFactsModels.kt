@@ -12,7 +12,10 @@ data class OFFProduct(
     @SerializedName("product_name") val productName: String? = null,
     @SerializedName("product_name_en") val productNameEn: String? = null,
     @SerializedName("brands") val brands: String? = null,
-    val nutriments: OFFNutriments? = null
+    val nutriments: OFFNutriments? = null,
+    @SerializedName("serving_size") val servingSize: String? = null,
+    @SerializedName("serving_quantity") val servingQuantity: Double? = null,
+    @SerializedName("categories_tags") val categoriesTags: List<String>? = null
 )
 
 // Search response models
@@ -51,5 +54,36 @@ data class OFFNutriments(
     @SerializedName("manganese_100g") val manganese100g: Double? = null,
     @SerializedName("selenium_100g") val selenium100g: Double? = null,
     @SerializedName("iodine_100g") val iodine100g: Double? = null,
-    @SerializedName("chromium_100g") val chromium100g: Double? = null
+    @SerializedName("chromium_100g") val chromium100g: Double? = null,
+    // Per-serving values (used for supplements/BADs)
+    @SerializedName("energy-kcal_serving") val energyKcalServing: Double? = null,
+    @SerializedName("proteins_serving") val proteinsServing: Double? = null,
+    @SerializedName("fat_serving") val fatServing: Double? = null,
+    @SerializedName("carbohydrates_serving") val carbohydratesServing: Double? = null,
+    @SerializedName("fiber_serving") val fiberServing: Double? = null,
+    @SerializedName("vitamin-a_serving") val vitaminAServing: Double? = null,
+    @SerializedName("vitamin-b1_serving") val vitaminB1Serving: Double? = null,
+    @SerializedName("vitamin-b2_serving") val vitaminB2Serving: Double? = null,
+    @SerializedName("vitamin-pp_serving") val vitaminB3Serving: Double? = null,
+    @SerializedName("pantothenic-acid_serving") val vitaminB5Serving: Double? = null,
+    @SerializedName("vitamin-b6_serving") val vitaminB6Serving: Double? = null,
+    @SerializedName("biotin_serving") val vitaminB7Serving: Double? = null,
+    @SerializedName("vitamin-b9_serving") val vitaminB9Serving: Double? = null,
+    @SerializedName("vitamin-b12_serving") val vitaminB12Serving: Double? = null,
+    @SerializedName("vitamin-c_serving") val vitaminCServing: Double? = null,
+    @SerializedName("vitamin-d_serving") val vitaminDServing: Double? = null,
+    @SerializedName("vitamin-e_serving") val vitaminEServing: Double? = null,
+    @SerializedName("vitamin-k_serving") val vitaminKServing: Double? = null,
+    @SerializedName("calcium_serving") val calciumServing: Double? = null,
+    @SerializedName("iron_serving") val ironServing: Double? = null,
+    @SerializedName("magnesium_serving") val magnesiumServing: Double? = null,
+    @SerializedName("phosphorus_serving") val phosphorusServing: Double? = null,
+    @SerializedName("potassium_serving") val potassiumServing: Double? = null,
+    @SerializedName("sodium_serving") val sodiumServing: Double? = null,
+    @SerializedName("zinc_serving") val zincServing: Double? = null,
+    @SerializedName("copper_serving") val copperServing: Double? = null,
+    @SerializedName("manganese_serving") val manganeseServing: Double? = null,
+    @SerializedName("selenium_serving") val seleniumServing: Double? = null,
+    @SerializedName("iodine_serving") val iodineServing: Double? = null,
+    @SerializedName("chromium_serving") val chromiumServing: Double? = null
 )

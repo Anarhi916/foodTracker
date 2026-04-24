@@ -613,7 +613,53 @@ Return format (array of ${itemsWithMissing.size} objects):
         }
 
         // Step 5: Cache all newly resolved foods and build final results
+        // Also do a last-resort individual AI call for any item that STILL has no nutrients
         for (item in aiPending) {
+            if (item.nutrientsPer100g == null) {
+                Log.w("Repository", "Fallback individual AI for '${item.foodNameEn}' (all previous steps failed)")
+                try {
+                    val fallbackPrompt = """
+You are a professional nutritionist. Provide nutritional values PER 100 GRAMS for: ${item.foodNameEn}
+Return ONLY a JSON object:
+{"calories": <kcal>, "protein": <g>, "fat": <g>, "carbs": <g>, "fiber": <g>,
+"vitamin_a": <mcg>, "vitamin_c": <mg>, "calcium": <mg>, "iron": <mg>,
+"vitamin_b1": <mg>, "vitamin_b2": <mg>, "vitamin_b3": <mg>, "vitamin_b5": <mg>,
+"vitamin_b6": <mg>, "vitamin_b7": <mcg>, "vitamin_b9": <mcg>, "vitamin_b12": <mcg>,
+"vitamin_d": <mcg>, "vitamin_e": <mg>, "vitamin_k": <mcg>,
+"magnesium": <mg>, "phosphorus": <mg>, "potassium": <mg>, "sodium": <mg>,
+"zinc": <mg>, "copper": <mg>, "manganese": <mg>, "selenium": <mcg>, "iodine": <mcg>, "chromium": <mcg>}
+""".trimIndent()
+                    val text = callOpenRouterWithRetry(
+                        messages = listOf(OpenRouterMessage(role = "user", content = fallbackPrompt)),
+                        models = textModels
+                    )
+                    val json = extractJson(text)
+                    val map = gson.fromJson(json, Map::class.java) as? Map<String, Any>
+                    if (map != null) {
+                        fun v(key: String) = (map[key] as? Number)?.toDouble() ?: 0.0
+                        item.nutrientsPer100g = NutrientData(
+                            calories = v("calories"), protein = v("protein"),
+                            fat = v("fat"), carbs = v("carbs"), fiber = v("fiber"),
+                            vitaminA = v("vitamin_a"), vitaminB1 = v("vitamin_b1"),
+                            vitaminB2 = v("vitamin_b2"), vitaminB3 = v("vitamin_b3"),
+                            vitaminB5 = v("vitamin_b5"), vitaminB6 = v("vitamin_b6"),
+                            vitaminB7 = v("vitamin_b7"), vitaminB9 = v("vitamin_b9"),
+                            vitaminB12 = v("vitamin_b12"), vitaminC = v("vitamin_c"),
+                            vitaminD = v("vitamin_d"), vitaminE = v("vitamin_e"),
+                            vitaminK = v("vitamin_k"), calcium = v("calcium"),
+                            iron = v("iron"), magnesium = v("magnesium"),
+                            phosphorus = v("phosphorus"), potassium = v("potassium"),
+                            sodium = v("sodium"), zinc = v("zinc"),
+                            copper = v("copper"), manganese = v("manganese"),
+                            selenium = v("selenium"), iodine = v("iodine"),
+                            chromium = v("chromium")
+                        )
+                        Log.d("Repository", "Fallback AI success for '${item.foodNameEn}': cal=${item.nutrientsPer100g!!.calories}")
+                    }
+                } catch (e: Exception) {
+                    Log.w("Repository", "Fallback AI also failed for '${item.foodNameEn}': ${e.message}")
+                }
+            }
             val per100g = item.nutrientsPer100g ?: continue
             try {
                 saveToCache(item.foodNameRu, item.foodNameEn, per100g)
@@ -907,6 +953,90 @@ Return ONLY JSON, e.g.: {"vitamin_a": 45, "calcium": 11}
         return fillMissingMicrosWithAI(nutrients, foodName, weight)
     }
 
+    /**
+     * Analyze a single dish as a whole (not splitting into ingredients).
+     * Used for photo analysis where user confirmed the dish name and weight.
+     * Returns a single FoodAnalysisResult.
+     */
+    suspend fun analyzeSingleDish(dishName: String, weightGrams: Double, useCache: Boolean = false): FoodAnalysisResult {
+        // Try cache first
+        if (useCache) {
+            val cached = findInCache(dishName)
+            if (cached != null) {
+                val factor = weightGrams / 100.0
+                return FoodAnalysisResult(
+                    foodName = dishName,
+                    foodNameEn = cached.first.keyEn,
+                    weightGrams = weightGrams,
+                    nutrients = cached.second * factor,
+                    fromCache = true
+                )
+            }
+        }
+
+        // Ask AI for nutrients of this exact dish per 100g
+        val prompt = """
+You are a professional nutritionist. Provide nutritional values PER 100 GRAMS for this COMPLETE DISH (do NOT split into ingredients):
+"$dishName"
+
+Return ONLY a JSON object with these fields:
+{"food_name_en": "<English translation>", "calories": <kcal>, "protein": <g>, "fat": <g>, "carbs": <g>, "fiber": <g>,
+"vitamin_a": <mcg>, "vitamin_b1": <mg>, "vitamin_b2": <mg>, "vitamin_b3": <mg>,
+"vitamin_b5": <mg>, "vitamin_b6": <mg>, "vitamin_b7": <mcg>, "vitamin_b9": <mcg>,
+"vitamin_b12": <mcg>, "vitamin_c": <mg>, "vitamin_d": <mcg>, "vitamin_e": <mg>,
+"vitamin_k": <mcg>, "calcium": <mg>, "iron": <mg>, "magnesium": <mg>,
+"phosphorus": <mg>, "potassium": <mg>, "sodium": <mg>, "zinc": <mg>,
+"copper": <mg>, "manganese": <mg>, "selenium": <mcg>, "iodine": <mcg>, "chromium": <mcg>}
+""".trimIndent()
+
+        val text = callOpenRouterWithRetry(
+            messages = listOf(OpenRouterMessage(role = "user", content = prompt)),
+            models = textModels
+        )
+        val json = extractJson(text)
+        Log.d("Repository", "Single dish AI response: $json")
+
+        val map = gson.fromJson(json, Map::class.java) as? Map<String, Any>
+            ?: throw Exception("Не удалось получить нутриенты для блюда")
+        fun v(key: String) = (map[key] as? Number)?.toDouble() ?: 0.0
+        val nameEn = (map["food_name_en"] as? String) ?: dishName
+
+        val per100g = NutrientData(
+            calories = v("calories"), protein = v("protein"),
+            fat = v("fat"), carbs = v("carbs"), fiber = v("fiber"),
+            vitaminA = v("vitamin_a"), vitaminB1 = v("vitamin_b1"),
+            vitaminB2 = v("vitamin_b2"), vitaminB3 = v("vitamin_b3"),
+            vitaminB5 = v("vitamin_b5"), vitaminB6 = v("vitamin_b6"),
+            vitaminB7 = v("vitamin_b7"), vitaminB9 = v("vitamin_b9"),
+            vitaminB12 = v("vitamin_b12"), vitaminC = v("vitamin_c"),
+            vitaminD = v("vitamin_d"), vitaminE = v("vitamin_e"),
+            vitaminK = v("vitamin_k"), calcium = v("calcium"),
+            iron = v("iron"), magnesium = v("magnesium"),
+            phosphorus = v("phosphorus"), potassium = v("potassium"),
+            sodium = v("sodium"), zinc = v("zinc"),
+            copper = v("copper"), manganese = v("manganese"),
+            selenium = v("selenium"), iodine = v("iodine"),
+            chromium = v("chromium")
+        )
+
+        // Cache it
+        try {
+            saveToCache(dishName, nameEn, per100g)
+            Log.d("Repository", "Cached single dish '$dishName' / '$nameEn'")
+        } catch (e: Exception) {
+            Log.w("Repository", "Failed to cache single dish: ${e.message}")
+        }
+
+        val factor = weightGrams / 100.0
+        return FoodAnalysisResult(
+            foodName = dishName,
+            foodNameEn = nameEn,
+            weightGrams = weightGrams,
+            nutrients = per100g * factor,
+            fromCache = false
+        )
+    }
+
     suspend fun addFoodEntry(foodName: String, weightGrams: Double, nutrients: NutrientData, source: String = "manual", fromCache: Boolean = false) {
         db.foodEntryDao().insert(
             FoodEntryEntity(
@@ -1024,6 +1154,175 @@ Return ONLY JSON, e.g.: {"vitamin_a": 45, "calcium": 11}
         }
 
         return Triple(name, enrichedPer100g, false)
+    }
+
+    // --- Supplement (BAD) barcode lookup ---
+
+    /**
+     * Result of supplement barcode lookup.
+     * Contains per-serving nutrients and serving info for the UI dialog.
+     */
+    data class SupplementResult(
+        val name: String,
+        val nutrientsPerServing: NutrientData,
+        val servingSize: String,   // e.g. "1 capsule", "2 tablets"
+        val fromCache: Boolean
+    )
+
+    /**
+     * Checks if an OFF product is a dietary supplement by its categories.
+     */
+    private fun isSupplementProduct(product: OFFProduct): Boolean {
+        val tags = product.categoriesTags ?: return false
+        return tags.any { tag ->
+            tag.contains("supplement", ignoreCase = true) ||
+            tag.contains("complément", ignoreCase = true) ||
+            tag.contains("витамин", ignoreCase = true) ||
+            tag.contains("dietary-supplement", ignoreCase = true)
+        }
+    }
+
+    /**
+     * Lookup a supplement by barcode. Returns per-serving nutrients.
+     * Flow: cache → OFF API (for name & serving size) → AI (for accurate per-serving nutrients) → cache.
+     * OFF nutrient data for supplements is unreliable (unit mismatches), so we use AI
+     * to determine per-serving values based on product name and serving info.
+     */
+    suspend fun lookupSupplementBarcode(barcode: String): SupplementResult? {
+        // 1. Check cache by barcode (supplement-prefixed key)
+        val cacheKey = "supplement:$barcode"
+        val cachedByBarcode = findInCache(cacheKey)
+        if (cachedByBarcode != null) {
+            Log.d("Repository", "Supplement cache HIT for $barcode: ${cachedByBarcode.first.keyEn}")
+            val servingSize = cachedByBarcode.first.keyOriginal
+                .removePrefix("supplement:$barcode:")
+                .ifBlank { "1 порция" }
+            return SupplementResult(
+                name = cachedByBarcode.first.keyEn,
+                nutrientsPerServing = cachedByBarcode.second,
+                servingSize = servingSize,
+                fromCache = true
+            )
+        }
+
+        // 2. OFF API lookup — only for product name and serving size
+        return try {
+            val response = offApi.getProduct(barcode)
+            val product = response.product ?: return null
+            val name = product.productName
+                ?: product.productNameEn
+                ?: product.brands
+                ?: "Dietary supplement (barcode: $barcode)"
+            val servingSize = product.servingSize ?: "1 порция"
+
+            // 3. AI determines accurate per-serving nutrients
+            //    OFF data for supplements has unreliable units (stores everything in grams),
+            //    so we ask AI which knows standard supplement dosages.
+            //    We pass both name and barcode so AI has maximum context.
+            val perServing = getSupplementNutrientsFromAI(name, servingSize, barcode)
+
+            // 4. Cache the result
+            try {
+                saveToCache("supplement:$barcode:$servingSize", name, perServing)
+                Log.d("Repository", "Cached supplement barcode $barcode as '$name', serving=$servingSize")
+            } catch (e: Exception) {
+                Log.w("Repository", "Failed to cache supplement: ${e.message}")
+            }
+
+            SupplementResult(
+                name = name,
+                nutrientsPerServing = perServing,
+                servingSize = servingSize,
+                fromCache = false
+            )
+        } catch (e: Exception) {
+            Log.e("Repository", "Supplement barcode lookup failed", e)
+            null
+        }
+    }
+
+    /**
+     * Ask AI for accurate per-serving nutrients of a dietary supplement.
+     * AI knows standard supplement dosages and uses correct units (mcg, mg).
+     */
+    private suspend fun getSupplementNutrientsFromAI(productName: String, servingSize: String, barcode: String = ""): NutrientData {
+        val barcodeHint = if (barcode.isNotBlank()) "\nBarcode: $barcode" else ""
+        val prompt = """
+You are a nutrition database expert. For the dietary supplement described below, provide the nutrients PER ONE SERVING.
+If the product name is generic or unclear, use the barcode to identify the exact product.
+
+Product: $productName$barcodeHint
+Serving size: $servingSize
+
+IMPORTANT UNITS — use these EXACT units:
+- calories: kcal
+- protein, fat, carbs, fiber: grams (g)
+- vitamin_a: mcg RAE
+- vitamin_b1, vitamin_b2, vitamin_b3, vitamin_b5, vitamin_b6: mg
+- vitamin_b7: mcg
+- vitamin_b9: mcg DFE
+- vitamin_b12: mcg
+- vitamin_c: mg
+- vitamin_d: mcg (NOT IU! 1 IU = 0.025 mcg)
+- vitamin_e: mg
+- vitamin_k: mcg (NOT mg! NOT g!)
+- calcium, iron, magnesium, phosphorus, potassium, sodium, zinc: mg
+- copper: mg
+- manganese: mg
+- selenium, iodine, chromium: mcg
+
+Return ONLY a JSON object with numeric values PER SERVING. If a nutrient is not present in this supplement, use 0.
+Example for "Vitamin K2 100mcg": {"vitamin_k": 100, "calories": 0, ...}
+
+JSON:
+""".trimIndent()
+
+        val text = callOpenRouterWithRetry(
+            messages = listOf(OpenRouterMessage(role = "user", content = prompt)),
+            models = textModels
+        )
+        val json = extractJson(text)
+        Log.d("Repository", "Supplement AI response: $json")
+
+        return try {
+            val map = gson.fromJson(json, Map::class.java) as? Map<String, Any> ?: return NutrientData()
+            fun v(key: String) = (map[key] as? Number)?.toDouble() ?: 0.0
+            NutrientData(
+                calories = v("calories"),
+                protein = v("protein"),
+                fat = v("fat"),
+                carbs = v("carbs"),
+                fiber = v("fiber"),
+                vitaminA = v("vitamin_a"),
+                vitaminB1 = v("vitamin_b1"),
+                vitaminB2 = v("vitamin_b2"),
+                vitaminB3 = v("vitamin_b3"),
+                vitaminB5 = v("vitamin_b5"),
+                vitaminB6 = v("vitamin_b6"),
+                vitaminB7 = v("vitamin_b7"),
+                vitaminB9 = v("vitamin_b9"),
+                vitaminB12 = v("vitamin_b12"),
+                vitaminC = v("vitamin_c"),
+                vitaminD = v("vitamin_d"),
+                vitaminE = v("vitamin_e"),
+                vitaminK = v("vitamin_k"),
+                calcium = v("calcium"),
+                iron = v("iron"),
+                magnesium = v("magnesium"),
+                phosphorus = v("phosphorus"),
+                potassium = v("potassium"),
+                sodium = v("sodium"),
+                zinc = v("zinc"),
+                copper = v("copper"),
+                manganese = v("manganese"),
+                selenium = v("selenium"),
+                iodine = v("iodine"),
+                chromium = v("chromium")
+            )
+        } catch (e: Exception) {
+            Log.w("Repository", "Failed to parse supplement AI response: ${e.message}")
+            NutrientData()
+        }
     }
 
     // --- OpenRouter helpers with retry/fallback ---

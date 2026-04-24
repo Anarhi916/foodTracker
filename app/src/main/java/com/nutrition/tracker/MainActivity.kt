@@ -85,6 +85,9 @@ fun NutritionTrackerApp() {
                 },
                 onNavigateToSavedProducts = {
                     navController.navigate(Screen.SavedProducts.route)
+                },
+                onNavigateToSupplementScanner = {
+                    navController.navigate(Screen.SupplementScanner.route)
                 }
             )
         }
@@ -100,6 +103,15 @@ fun NutritionTrackerApp() {
             BarcodeScannerScreen(
                 onBarcodeScanned = { barcode ->
                     mainViewModel.onBarcodeScanned(barcode)
+                },
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.SupplementScanner.route) {
+            BarcodeScannerScreen(
+                onBarcodeScanned = { barcode ->
+                    mainViewModel.onSupplementBarcodeScanned(barcode)
                 },
                 onBack = { navController.popBackStack() }
             )

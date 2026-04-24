@@ -33,7 +33,13 @@ data class MainUiState(
     // Photo edit dialog
     val showPhotoEditDialog: Boolean = false,
     val photoFoodName: String = "",
-    val photoWeight: String = "200"
+    val photoWeight: String = "200",
+    // Supplement (BAD) dialog
+    val showSupplementDialog: Boolean = false,
+    val supplementName: String? = null,
+    val supplementNutrientsPerServing: NutrientData? = null,
+    val supplementServingSize: String = "",
+    val supplementServings: String = "1"
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -257,6 +263,71 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
+    // --- Supplement (BAD) ---
+    fun onSupplementBarcodeScanned(barcode: String) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+            try {
+                val result = repo.lookupSupplementBarcode(barcode)
+                if (result != null) {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        showSupplementDialog = true,
+                        supplementName = result.name,
+                        supplementNutrientsPerServing = result.nutrientsPerServing,
+                        supplementServingSize = result.servingSize,
+                        supplementServings = "1"
+                    )
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        error = "БАД не найден по штрих-коду: $barcode"
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "Ошибка поиска БАД: ${e.message}"
+                )
+            }
+        }
+    }
+
+    fun updateSupplementServings(servings: String) {
+        _uiState.value = _uiState.value.copy(supplementServings = servings)
+    }
+
+    fun confirmSupplementAdd() {
+        val state = _uiState.value
+        val name = state.supplementName ?: return
+        val perServing = state.supplementNutrientsPerServing ?: return
+        val servings = state.supplementServings.toDoubleOrNull() ?: return
+        val nutrients = perServing * servings
+
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                showSupplementDialog = false,
+                supplementName = null,
+                supplementNutrientsPerServing = null
+            )
+            repo.addFoodEntry(
+                foodName = "\uD83D\uDC8A $name",
+                weightGrams = servings,
+                nutrients = nutrients,
+                source = "supplement",
+                fromCache = true
+            )
+        }
+    }
+
+    fun dismissSupplementDialog() {
+        _uiState.value = _uiState.value.copy(
+            showSupplementDialog = false,
+            supplementName = null,
+            supplementNutrientsPerServing = null
+        )
+    }
+
     // --- Photo ---
     fun analyzePhoto(imageBytes: ByteArray) {
         viewModelScope.launch {
@@ -297,8 +368,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val weight = state.photoWeight.trim()
         if (foodDesc.isBlank()) return
 
-        // Build description like "салат из помидоров 200г"
-        val description = if (weight.isNotBlank()) "$foodDesc ${weight}г" else foodDesc
+        val weightGrams = weight.toDoubleOrNull() ?: 200.0
 
         _uiState.value = _uiState.value.copy(
             showPhotoEditDialog = false,
@@ -308,30 +378,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             try {
-                // Reuse the text analysis flow but bypass cache for photo analysis
-                val results = repo.analyzeFoodText(description, useCache = false)
-                if (results.size == 1) {
-                    val result = results.first()
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        pendingFood = result,
-                        pendingFoodWeight = if (result.weightGrams > 0) result.weightGrams else (weight.toDoubleOrNull() ?: 200.0),
-                        pendingFoodSource = "photo",
-                        showConfirmDialog = true
-                    )
-                } else {
-                    for (result in results) {
-                        val w = if (result.weightGrams > 0) result.weightGrams else 100.0
-                        repo.addFoodEntry(
-                            foodName = result.foodName,
-                            weightGrams = w,
-                            nutrients = result.nutrients,
-                            source = "photo",
-                            fromCache = result.fromCache
-                        )
-                    }
-                    _uiState.value = _uiState.value.copy(isLoading = false)
-                }
+                // Photo analysis: treat as a single dish, don't split into ingredients
+                val result = repo.analyzeSingleDish(foodDesc, weightGrams)
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    pendingFood = result,
+                    pendingFoodWeight = result.weightGrams,
+                    pendingFoodSource = "photo",
+                    showConfirmDialog = true
+                )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,

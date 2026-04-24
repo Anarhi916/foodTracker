@@ -24,7 +24,8 @@ fun MainScreen(
     onNavigateToCamera: () -> Unit,
     onNavigateToHistory: () -> Unit,
     onNavigateToEditProfile: () -> Unit,
-    onNavigateToSavedProducts: () -> Unit = {}
+    onNavigateToSavedProducts: () -> Unit = {},
+    onNavigateToSupplementScanner: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val entries by viewModel.todayEntries.collectAsStateWithLifecycle()
@@ -65,6 +66,18 @@ fun MainScreen(
             onConfirm = { viewModel.confirmBarcodeAdd() },
             onDismiss = { viewModel.dismissBarcodeDialog() },
             title = "Найден продукт"
+        )
+    }
+
+    // Supplement (BAD) dialog
+    if (uiState.showSupplementDialog) {
+        SupplementServingsDialog(
+            supplementName = uiState.supplementName ?: "",
+            servingSize = uiState.supplementServingSize,
+            servings = uiState.supplementServings,
+            onServingsChange = { viewModel.updateSupplementServings(it) },
+            onConfirm = { viewModel.confirmSupplementAdd() },
+            onDismiss = { viewModel.dismissSupplementDialog() }
         )
     }
 
@@ -184,6 +197,7 @@ fun MainScreen(
                         onAnalyze = { viewModel.analyzeFood() },
                         onScanBarcode = onNavigateToScanner,
                         onTakePhoto = onNavigateToCamera,
+                        onScanSupplement = onNavigateToSupplementScanner,
                         isLoading = uiState.isLoading
                     )
                 }
@@ -296,6 +310,7 @@ private fun FoodInputSection(
     onAnalyze: () -> Unit,
     onScanBarcode: () -> Unit,
     onTakePhoto: () -> Unit,
+    onScanSupplement: () -> Unit,
     isLoading: Boolean
 ) {
     Card(
@@ -315,25 +330,43 @@ private fun FoodInputSection(
 
             Spacer(Modifier.height(8.dp))
 
+            Button(
+                onClick = onAnalyze,
+                enabled = !isLoading && foodInput.isNotBlank(),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Добавить")
+            }
+
+            Spacer(Modifier.height(8.dp))
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Button(
-                    onClick = onAnalyze,
-                    enabled = !isLoading && foodInput.isNotBlank(),
+                OutlinedButton(
+                    onClick = onScanBarcode,
+                    enabled = !isLoading,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Добавить")
+                    Icon(Icons.Default.QrCodeScanner, contentDescription = "Штрих-код")
                 }
 
-                OutlinedButton(onClick = onScanBarcode, enabled = !isLoading) {
-                    Icon(Icons.Default.QrCodeScanner, contentDescription = "Сканировать")
+                OutlinedButton(
+                    onClick = onScanSupplement,
+                    enabled = !isLoading,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("💊")
                 }
 
-                OutlinedButton(onClick = onTakePhoto, enabled = !isLoading) {
+                OutlinedButton(
+                    onClick = onTakePhoto,
+                    enabled = !isLoading,
+                    modifier = Modifier.weight(1f)
+                ) {
                     Icon(Icons.Default.CameraAlt, contentDescription = "Фото")
                 }
             }
