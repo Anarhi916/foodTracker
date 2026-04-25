@@ -9,6 +9,6 @@ interface UsdaFdcApiService {
     suspend fun searchFoods(
         @Query("api_key") apiKey: String = "FrYuRxWfygwuQbOzohHhbbI981ahQCGnPTJiDb35",
         @Query("query") query: String,
-        @Query("pageSize") pageSize: Int = 5
+        @Query("pageSize") pageSize: Int = 25
     ): UsdaSearchResponse
 }

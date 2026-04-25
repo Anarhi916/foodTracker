@@ -441,13 +441,68 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
                     }
                     // Penalize compound dish names (short descriptions with no comma = likely a recipe name)
                     val recipePenalty = if (f.dataType == "Survey (FNDDS)" && !desc.contains(",") && desc.split(" ").size <= 3) -40 else 0
-                    return typePriority + wordMatchBonus + plainBonus + recipePenalty
+                    // Penalize Branded items that are a different product category
+                    // e.g. "STRAWBERRY MILKSHAKE CEREAL" is a cereal, not a milkshake
+                    val differentCategoryWords = listOf("cereal", "protein powder", "toaster pastries", "pastries", "ice cream", "candy", "bar", "cookie", "cookies", "gummies", "gummy", "supplement", "mix", "powder")
+                    val categoryPenalty = if (f.dataType == "Branded" && differentCategoryWords.any { desc.contains(it) && !item.foodNameEn.lowercase().contains(it) }) -100 else 0
+                    // Prefer entries where description closely matches query length (penalize very long descriptions)
+                    val descWords = desc.split("\\W+".toRegex()).filter { it.length >= 3 }
+                    val lengthPenalty = if (descWords.size > queryWords.size * 3) -20 else 0
+                    // Prefer entries where description STARTS with the query word (exact product, not a flavor)
+                    // e.g. "MILKSHAKES, CHOCOLATE" vs "CHOCOLATE MILKSHAKE CEREAL"
+                    val startsWithBonus = if (mainWord != null && (desc.startsWith(mainWord) || desc.startsWith(mainWord + "s") || desc.startsWith(mainWord + "es"))) 40 else 0
+                    // Prefer entries with comma-separated format (USDA standard naming: "PRODUCT, VARIETY")
+                    // Also prefer entries where the part before comma matches query (generic product)
+                    val beforeComma = desc.substringBefore(",").trim()
+                    val commaFormatBonus = when {
+                        desc.contains(",") && (beforeComma == mainWord || beforeComma == mainWord + "s" || beforeComma == mainWord + "es") -> 30
+                        desc.contains(",") && desc.indexOf(",") <= desc.length / 2 -> 15
+                        else -> 0
+                    }
+                    return typePriority + wordMatchBonus + plainBonus + recipePenalty + categoryPenalty + lengthPenalty + startsWithBonus + commaFormatBonus
                 }
-                val food = foodsWithCalories.maxByOrNull { scoreFood(it) }
-                Log.d("Repository", "USDA selected: '${food?.description}' (${food?.dataType}), score=${food?.let { scoreFood(it) }}, from ${foodsWithCalories.size} candidates")
-                if (food?.foodNutrients != null) {
+                // Log all candidates for debugging
+                Log.d("Repository", "USDA query='${item.foodNameEn}', mainWord='$mainWord', ${foodsWithCalories.size} candidates:")
+                for (candidate in foodsWithCalories.sortedByDescending { scoreFood(it) }) {
+                    val cNuts = candidate.foodNutrients?.associate { (it.nutrientId ?: 0) to (it.value ?: 0.0) } ?: emptyMap()
+                    Log.d("Repository", "  score=${scoreFood(candidate)} '${candidate.description}' [${candidate.dataType}] cal=${cNuts[1008]} p=${cNuts[1003]} c=${cNuts[1005]}")
+                }
+                val food = foodsWithCalories
+                    .sortedByDescending { scoreFood(it) }
+                    .firstOrNull()
+                var selectedFood = food
+                if (selectedFood != null && selectedFood.dataType == "Branded") {
                     val nMap = mutableMapOf<Int, Double>()
-                    for (fn in food.foodNutrients) {
+                    for (fn in selectedFood.foodNutrients ?: emptyList()) {
+                        if (fn.nutrientId != null && fn.value != null) nMap[fn.nutrientId] = fn.value
+                    }
+                    val prot = nMap[UsdaFoodNutrient.PROTEIN] ?: 0.0
+                    val fat = nMap[UsdaFoodNutrient.FAT] ?: 0.0
+                    val carbs = nMap[UsdaFoodNutrient.CARBS] ?: 0.0
+                    val queryLower = item.foodNameEn.lowercase()
+                    val highProtOk = listOf("protein", "powder", "whey", "casein", "isolate", "jerky", "dried meat", "parmesan").any { queryLower.contains(it) }
+                    val highCarbOk = listOf("sugar", "honey", "syrup", "candy", "jam", "dried", "flour", "cereal", "granola").any { queryLower.contains(it) }
+                    val highFatOk = listOf("oil", "butter", "lard", "ghee", "mayo", "mayonnaise").any { queryLower.contains(it) }
+                    if ((prot > 40 && !highProtOk) || (carbs > 75 && !highCarbOk) || (fat > 70 && !highFatOk)) {
+                        Log.w("Repository", "Top USDA pick '${selectedFood.description}' rejected (implausible macros p=$prot f=$fat c=$carbs for '$queryLower'), trying next")
+                        selectedFood = foodsWithCalories.sortedByDescending { scoreFood(it) }
+                            .drop(1)
+                            .firstOrNull { alt ->
+                                val altMap = mutableMapOf<Int, Double>()
+                                for (fn in alt.foodNutrients ?: emptyList()) {
+                                    if (fn.nutrientId != null && fn.value != null) altMap[fn.nutrientId] = fn.value
+                                }
+                                val ap = altMap[UsdaFoodNutrient.PROTEIN] ?: 0.0
+                                val ac = altMap[UsdaFoodNutrient.CARBS] ?: 0.0
+                                val af = altMap[UsdaFoodNutrient.FAT] ?: 0.0
+                                !((ap > 40 && !highProtOk) || (ac > 75 && !highCarbOk) || (af > 70 && !highFatOk))
+                            }
+                    }
+                }
+                Log.d("Repository", "USDA selected: '${selectedFood?.description}' (${selectedFood?.dataType}), score=${selectedFood?.let { scoreFood(it) }}, from ${foodsWithCalories.size} candidates")
+                if (selectedFood?.foodNutrients != null) {
+                    val nMap = mutableMapOf<Int, Double>()
+                    for (fn in selectedFood.foodNutrients) {
                         if (fn.nutrientId != null && fn.value != null) nMap[fn.nutrientId] = fn.value
                     }
                     val N = UsdaFoodNutrient
@@ -479,10 +534,10 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
                         "cake", "cookie", "biscuit", "muffin", "pie", "pastry", "croissant", "doughnut",
                         "flour", "cereal", "cornmeal", "porridge"
                     )
-                    val foodDesc = (food.description ?: "").lowercase() + " " + item.foodNameEn.lowercase()
+                    val foodDesc = (selectedFood.description ?: "").lowercase() + " " + item.foodNameEn.lowercase()
                     val isFlourBased = flourKeywords.any { foodDesc.contains(it) }
                     val corrected = if (isFlourBased) {
-                        Log.d("Repository", "Applying enrichment correction for flour-based: ${food.description}")
+                        Log.d("Repository", "Applying enrichment correction for flour-based: ${selectedFood.description}")
                         per100g.copy(
                             vitaminB1 = per100g.vitaminB1 * 0.17,
                             vitaminB2 = per100g.vitaminB2 * 0.10,
@@ -496,7 +551,7 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
                     val macroCalories = corrected.protein * 4 + corrected.fat * 9 + corrected.carbs * 4
                     val reportedCalories = corrected.calories
                     val sane = reportedCalories > 0 && (macroCalories <= reportedCalories * 1.3)
-                    Log.d("Repository", "USDA '${food.description}' [${food.dataType}]: " +
+                    Log.d("Repository", "USDA '${selectedFood.description}' [${selectedFood.dataType}]: " +
                         "cal=${corrected.calories}, p=${corrected.protein}, f=${corrected.fat}, c=${corrected.carbs} " +
                         "sane=$sane flourCorrected=$isFlourBased")
                     if (sane && (corrected.calories > 0 || corrected.protein > 0 || corrected.fat > 0 || corrected.carbs > 0)) {
@@ -725,6 +780,21 @@ Return ONLY a JSON object:
                     Log.w("Repository", "Fallback AI also failed for '${item.foodNameEn}': ${e.message}")
                 }
             }
+
+            // Last resort: use analyzeSingleDish which asks AI for complete nutrients
+            if (item.nutrientsPer100g == null || (item.nutrientsPer100g!!.calories == 0.0 && item.nutrientsPer100g!!.protein == 0.0)) {
+                Log.w("Repository", "Last resort analyzeSingleDish for '${item.foodNameRu}'")
+                try {
+                    val dishResult = analyzeSingleDish(item.foodNameRu, 100.0, useCache = false)
+                    if (dishResult.nutrients.calories > 0) {
+                        item.nutrientsPer100g = dishResult.nutrients  // already per 100g
+                        Log.d("Repository", "Last resort success for '${item.foodNameRu}': cal=${dishResult.nutrients.calories}")
+                    }
+                } catch (e: Exception) {
+                    Log.w("Repository", "Last resort also failed for '${item.foodNameRu}': ${e.message}")
+                }
+            }
+
             val per100g = item.nutrientsPer100g ?: continue
             try {
                 saveToCache(item.foodNameRu, item.foodNameEn, per100g)
@@ -735,16 +805,25 @@ Return ONLY a JSON object:
         }
 
         val allItems = cachedResults + aiPending
-        return allItems.map { item ->
-            val per100g = item.nutrientsPer100g ?: NutrientData()
-            val factor = item.weight / 100.0
-            FoodAnalysisResult(
-                foodName = item.foodNameRu,
-                foodNameEn = item.foodNameEn,
-                weightGrams = item.weight,
-                nutrients = per100g * factor,
-                fromCache = item.fromCache
-            )
+        return allItems.mapNotNull { item ->
+            val per100g = item.nutrientsPer100g
+            // Skip items where all nutrients are zero (all resolution steps failed)
+            if (per100g == null || (per100g.calories == 0.0 && per100g.protein == 0.0 && per100g.fat == 0.0 && per100g.carbs == 0.0)) {
+                Log.w("Repository", "Dropping '${item.foodNameRu}' — zero nutrients after all steps")
+                null
+            } else {
+                val factor = item.weight / 100.0
+                FoodAnalysisResult(
+                    foodName = item.foodNameRu,
+                    foodNameEn = item.foodNameEn,
+                    weightGrams = item.weight,
+                    nutrients = per100g * factor,
+                    fromCache = item.fromCache
+                )
+            }
+        }.ifEmpty {
+            // If everything was filtered out, throw error instead of silently returning empty list
+            throw Exception("Не удалось получить данные о нутриентах для введённых продуктов")
         }
     }
 
@@ -1200,13 +1279,26 @@ Return ONLY a JSON object with these fields:
         val result = lookupBarcode(barcode) ?: return null
         val (name, per100g) = result
 
-        // 3. AI enrich missing micros (per 100g)
+        // 3. If OFF returned zero macros, get all nutrients from AI instead
+        val basePer100g = if (per100g.calories == 0.0 && per100g.protein == 0.0 && per100g.fat == 0.0 && per100g.carbs == 0.0) {
+            Log.d("Repository", "Barcode $barcode: OFF returned zero macros, falling back to AI for all nutrients")
+            try {
+                val aiResult = analyzeSingleDish(name, 100.0, useCache = false)
+                aiResult.nutrients  // already per 100g since weight=100
+            } catch (e: Exception) {
+                Log.w("Repository", "AI fallback for barcode failed: ${e.message}")
+                per100g
+            }
+        } else {
+            per100g
+        }
+
+        // 4. AI enrich missing micros (per 100g)
         val enrichedPer100g = try {
-            val enrichedScaled = enrichNutrientsWithAI(name, per100g, 100.0)
-            enrichedScaled  // already per 100g since weight=100
+            enrichNutrientsWithAI(name, basePer100g, 100.0)
         } catch (e: Exception) {
             Log.w("Repository", "AI enrichment failed for barcode $barcode: ${e.message}")
-            per100g
+            basePer100g
         }
 
         // 4. Cache the enriched result

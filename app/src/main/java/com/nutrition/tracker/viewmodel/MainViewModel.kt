@@ -142,12 +142,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun confirmAddFood() {
         val state = _uiState.value
         val food = state.pendingFood ?: return
+        val newWeight = state.pendingFoodWeight
+        // Recalculate nutrients if weight was changed
+        val nutrients = if (food.weightGrams > 0 && newWeight != food.weightGrams) {
+            food.nutrients * (newWeight / food.weightGrams)
+        } else {
+            food.nutrients
+        }
 
         viewModelScope.launch {
             repo.addFoodEntry(
                 foodName = food.foodName,
-                weightGrams = state.pendingFoodWeight,
-                nutrients = food.nutrients,
+                weightGrams = newWeight,
+                nutrients = nutrients,
                 source = state.pendingFoodSource,
                 fromCache = food.fromCache
             )
