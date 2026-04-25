@@ -172,6 +172,73 @@ data class NutrientData(
         "chromium" -> chromium
         else -> 0.0
     }
+
+    fun withUpdatedKey(key: String, value: Double): NutrientData = when (key) {
+        "calories" -> copy(calories = value)
+        "protein" -> copy(protein = value)
+        "fat" -> copy(fat = value)
+        "carbs" -> copy(carbs = value)
+        "fiber" -> copy(fiber = value)
+        "vitaminA" -> copy(vitaminA = value)
+        "vitaminB1" -> copy(vitaminB1 = value)
+        "vitaminB2" -> copy(vitaminB2 = value)
+        "vitaminB3" -> copy(vitaminB3 = value)
+        "vitaminB5" -> copy(vitaminB5 = value)
+        "vitaminB6" -> copy(vitaminB6 = value)
+        "vitaminB7" -> copy(vitaminB7 = value)
+        "vitaminB9" -> copy(vitaminB9 = value)
+        "vitaminB12" -> copy(vitaminB12 = value)
+        "vitaminC" -> copy(vitaminC = value)
+        "vitaminD" -> copy(vitaminD = value)
+        "vitaminE" -> copy(vitaminE = value)
+        "vitaminK" -> copy(vitaminK = value)
+        "calcium" -> copy(calcium = value)
+        "iron" -> copy(iron = value)
+        "magnesium" -> copy(magnesium = value)
+        "phosphorus" -> copy(phosphorus = value)
+        "potassium" -> copy(potassium = value)
+        "sodium" -> copy(sodium = value)
+        "zinc" -> copy(zinc = value)
+        "copper" -> copy(copper = value)
+        "manganese" -> copy(manganese = value)
+        "selenium" -> copy(selenium = value)
+        "iodine" -> copy(iodine = value)
+        "chromium" -> copy(chromium = value)
+        else -> this
+    }
+
+    fun allNutrientsList(): List<Triple<String, String, Double>> = listOf(
+        Triple("calories", "Калории (ккал)", calories),
+        Triple("protein", "Белки (г)", protein),
+        Triple("fat", "Жиры (г)", fat),
+        Triple("carbs", "Углеводы (г)", carbs),
+        Triple("fiber", "Клетчатка (г)", fiber),
+        Triple("vitaminA", "Витамин A (мкг)", vitaminA),
+        Triple("vitaminB1", "Витамин B1 (мг)", vitaminB1),
+        Triple("vitaminB2", "Витамин B2 (мг)", vitaminB2),
+        Triple("vitaminB3", "Витамин B3 (мг)", vitaminB3),
+        Triple("vitaminB5", "Витамин B5 (мг)", vitaminB5),
+        Triple("vitaminB6", "Витамин B6 (мг)", vitaminB6),
+        Triple("vitaminB7", "Витамин B7 (мкг)", vitaminB7),
+        Triple("vitaminB9", "Витамин B9 (мкг)", vitaminB9),
+        Triple("vitaminB12", "Витамин B12 (мкг)", vitaminB12),
+        Triple("vitaminC", "Витамин C (мг)", vitaminC),
+        Triple("vitaminD", "Витамин D (мкг)", vitaminD),
+        Triple("vitaminE", "Витамин E (мг)", vitaminE),
+        Triple("vitaminK", "Витамин K (мкг)", vitaminK),
+        Triple("calcium", "Кальций (мг)", calcium),
+        Triple("iron", "Железо (мг)", iron),
+        Triple("magnesium", "Магний (мг)", magnesium),
+        Triple("phosphorus", "Фосфор (мг)", phosphorus),
+        Triple("potassium", "Калий (мг)", potassium),
+        Triple("sodium", "Натрий (мг)", sodium),
+        Triple("zinc", "Цинк (мг)", zinc),
+        Triple("copper", "Медь (мг)", copper),
+        Triple("manganese", "Марганец (мг)", manganese),
+        Triple("selenium", "Селен (мкг)", selenium),
+        Triple("iodine", "Йод (мкг)", iodine),
+        Triple("chromium", "Хром (мкг)", chromium)
+    )
 }
 
 data class FoodAnalysisResult(

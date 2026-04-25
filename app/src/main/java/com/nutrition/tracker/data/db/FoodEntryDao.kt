@@ -17,11 +17,14 @@ interface FoodEntryDao {
     @Query("SELECT * FROM food_entries WHERE date = :date ORDER BY createdAt DESC")
     fun getEntriesForDate(date: String): Flow<List<FoodEntryEntity>>
 
-    @Query("SELECT DISTINCT date FROM food_entries ORDER BY date DESC LIMIT 14")
+    @Query("SELECT DISTINCT date FROM food_entries ORDER BY date DESC")
     fun getRecentDates(): Flow<List<String>>
 
     @Query("SELECT * FROM food_entries WHERE date = :date ORDER BY createdAt DESC")
     suspend fun getEntriesForDateSync(date: String): List<FoodEntryEntity>
+
+    @Query("SELECT * FROM food_entries WHERE date >= :startDate AND date <= :endDate ORDER BY date DESC, createdAt DESC")
+    suspend fun getEntriesForDateRange(startDate: String, endDate: String): List<FoodEntryEntity>
 
     @Query("DELETE FROM food_entries WHERE date < :cutoffDate")
     suspend fun deleteOlderThan(cutoffDate: String)

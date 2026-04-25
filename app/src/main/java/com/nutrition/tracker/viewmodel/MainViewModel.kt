@@ -88,7 +88,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init {
-        viewModelScope.launch { repo.cleanupOldEntries() }
+        // No longer cleaning up old entries — keep full history for statistics
     }
 
     fun updateFoodInput(text: String) {
@@ -402,6 +402,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     suspend fun getEntriesForDate(date: String): List<FoodEntryEntity> {
         return repo.getEntriesForDateSync(date)
+    }
+
+    suspend fun getEntriesForDateRange(startDate: String, endDate: String): List<FoodEntryEntity> {
+        return repo.getEntriesForDateRange(startDate, endDate)
+    }
+
+    suspend fun getDailyNormsSync(): NutrientData? {
+        return repo.getDailyNormsSync()
+    }
+
+    fun saveDailyNorms(nutrients: NutrientData) {
+        viewModelScope.launch {
+            repo.saveDailyNorms(nutrients)
+        }
     }
 
     fun parseNutrients(json: String): NutrientData = repo.parseNutrients(json)

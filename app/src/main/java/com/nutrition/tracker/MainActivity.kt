@@ -88,6 +88,9 @@ fun NutritionTrackerApp() {
                 },
                 onNavigateToSupplementScanner = {
                     navController.navigate(Screen.SupplementScanner.route)
+                },
+                onNavigateToStatistics = {
+                    navController.navigate(Screen.Statistics.route)
                 }
             )
         }
@@ -135,6 +138,13 @@ fun NutritionTrackerApp() {
 
         composable(Screen.SavedProducts.route) {
             SavedProductsScreen(
+                viewModel = mainViewModel,
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.Statistics.route) {
+            StatisticsScreen(
                 viewModel = mainViewModel,
                 onBack = { navController.popBackStack() }
             )

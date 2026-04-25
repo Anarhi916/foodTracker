@@ -68,6 +68,16 @@ class NutritionRepository(
     // --- Daily Norms ---
     fun getDailyNorms(): Flow<DailyNormsEntity?> = db.dailyNormsDao().getNorms()
 
+    suspend fun getDailyNormsSync(): NutrientData? {
+        val entity = db.dailyNormsDao().getNormsSync() ?: return null
+        return parseNutrients(entity.nutrientsJson)
+    }
+
+    suspend fun saveDailyNorms(nutrients: NutrientData) {
+        db.dailyNormsDao().deleteAll()
+        db.dailyNormsDao().insert(DailyNormsEntity(nutrientsJson = gson.toJson(nutrients)))
+    }
+
     suspend fun calculateAndSaveNorms(gender: String, age: Int, weight: Double, height: Double, goals: String): NutrientData {
         val prompt = """
 You are a professional nutrition expert. Based on the following user data, calculate the recommended DAILY nutritional intake to achieve their goals.
@@ -78,6 +88,11 @@ User data:
 - Weight: $weight kg
 - Height: $height cm
 - Goals and activity level: $goals
+
+IMPORTANT: All values MUST be in the units specified. Pay special attention:
+- copper is in MG (milligrams), NOT mcg. Typical adult RDA is 0.9 mg.
+- manganese is in MG. Typical adult AI is 2.3 mg.
+- selenium, iodine, chromium are in MCG (micrograms).
 
 Calculate daily norms and return ONLY a JSON object with this EXACT structure (all numbers, no text):
 {
@@ -106,8 +121,8 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
   "potassium": <mg>,
   "sodium": <mg>,
   "zinc": <mg>,
-  "copper": <mg>,
-  "manganese": <mg>,
+  "copper": <mg, e.g. 0.9>,
+  "manganese": <mg, e.g. 2.3>,
   "selenium": <mcg>,
   "iodine": <mcg>,
   "chromium": <mcg>
@@ -118,10 +133,28 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
             messages = listOf(OpenRouterMessage(role = "user", content = prompt)),
             models = normsModels
         )
-        val nutrients = parseNutrientData(normsText)
+        val nutrients = sanitizeNormUnits(parseNutrientData(normsText))
         db.dailyNormsDao().deleteAll()
         db.dailyNormsDao().insert(DailyNormsEntity(nutrientsJson = gson.toJson(nutrients)))
         return nutrients
+    }
+
+    /**
+     * Fix common AI unit mistakes in daily norms.
+     * E.g. copper RDA is 0.9 mg but AI often returns 900 (mcg value).
+     * If a value is wildly out of expected range, convert it.
+     */
+    private fun sanitizeNormUnits(n: NutrientData): NutrientData {
+        var result = n
+        // Copper: RDA ~0.9 mg. If AI returns >10, it likely used mcg → divide by 1000
+        if (result.copper > 10) result = result.copy(copper = result.copper / 1000.0)
+        // Manganese: AI ~2.3 mg. If >50, likely used mcg
+        if (result.manganese > 50) result = result.copy(manganese = result.manganese / 1000.0)
+        // Chromium should be mcg (25-45). If <1, AI probably used mg → multiply by 1000
+        if (result.chromium > 0 && result.chromium < 1) result = result.copy(chromium = result.chromium * 1000.0)
+        // Selenium should be mcg (55-70). If <1, AI probably used mg
+        if (result.selenium > 0 && result.selenium < 1) result = result.copy(selenium = result.selenium * 1000.0)
+        return result
     }
 
     // --- Food Entries ---
@@ -133,6 +166,9 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
 
     suspend fun getEntriesForDateSync(date: String): List<FoodEntryEntity> =
         db.foodEntryDao().getEntriesForDateSync(date)
+
+    suspend fun getEntriesForDateRange(startDate: String, endDate: String): List<FoodEntryEntity> =
+        db.foodEntryDao().getEntriesForDateRange(startDate, endDate)
 
     fun getRecentDates(): Flow<List<String>> = db.foodEntryDao().getRecentDates()
 
@@ -221,7 +257,8 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
             val foodNameEn: String,
             val weight: Double,
             var nutrientsPer100g: NutrientData? = null,
-            var fromCache: Boolean = false
+            var fromCache: Boolean = false,
+            var cacheEntityId: Long? = null
         )
 
         val cachedResults = mutableListOf<PendingFood>()
@@ -236,15 +273,20 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
                     foodNameEn = cached.first.keyEn,
                     weight = if (weight > 0) weight else 100.0,
                     nutrientsPer100g = cached.second,
-                    fromCache = true
+                    fromCache = true,
+                    cacheEntityId = cached.first.id
                 ))
             } else {
                 uncachedItems.add(name to weight)
             }
         }
 
-        // If everything was cached, return immediately
-        if (uncachedItems.isEmpty() && cachedResults.isNotEmpty()) {
+        // If everything was cached AND no items need micro fill, return immediately
+        val cachedNeedMicroFill = cachedResults.any { item ->
+            val n = item.nutrientsPer100g ?: return@any false
+            n.chromium == 0.0 || n.iodine == 0.0
+        }
+        if (uncachedItems.isEmpty() && cachedResults.isNotEmpty() && !cachedNeedMicroFill) {
             Log.d("Repository", "All ${cachedResults.size} items from cache!")
             return cachedResults.map { item ->
                 val factor = item.weight / 100.0
@@ -259,11 +301,12 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
         }
 
         // Step 1: AI identifies uncached foods with names (RU + EN) and weights
-        val descriptionForAi = if (uncachedItems.isNotEmpty()) {
-            uncachedItems.joinToString(", ") { (name, w) ->
+        val aiPending = mutableListOf<PendingFood>()
+
+        if (uncachedItems.isNotEmpty()) {
+        val descriptionForAi = uncachedItems.joinToString(", ") { (name, w) ->
                 if (w > 0) "$name ${w.toInt()}г" else name
             }
-        } else foodDescription
 
         val identifyPrompt = """
 Определи ВСЕ продукты и их вес из описания. Описание может быть на русском, украинском или другом языке.
@@ -327,7 +370,6 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
         }
 
         // Check cache again by English key (AI may have translated to a cached key)
-        val aiPending = mutableListOf<PendingFood>()
         for (id in identities) {
             val nameRu = id.foodName.ifBlank { descriptionForAi }
             val nameEn = id.foodNameEn.ifBlank { id.foodName }
@@ -532,12 +574,17 @@ Return format (array of ${needAi.size} objects):
             }
         }
 
+        } // end if (uncachedItems.isNotEmpty())
+
         // Step 4: ONE batch AI call to fill missing micros for ALL items that have macros
-        val needMicros = aiPending.filter { it.nutrientsPer100g != null }
-        if (needMicros.isNotEmpty()) {
-            val itemsWithMissing = needMicros.filter { item ->
+        // Include cached items too — USDA never has chromium/iodine, so cached data is also incomplete
+        val allWithMacros = (aiPending + cachedResults).filter { it.nutrientsPer100g != null }
+        if (allWithMacros.isNotEmpty()) {
+            val itemsWithMissing = allWithMacros.filter { item ->
                 val n = item.nutrientsPer100g!!
+                // USDA never has chromium/iodine, so also check those
                 n.vitaminA == 0.0 || n.vitaminC == 0.0 || n.calcium == 0.0 || n.iron == 0.0
+                    || n.chromium == 0.0 || n.iodine == 0.0
             }
             if (itemsWithMissing.isNotEmpty()) {
                 Log.d("Repository", "Batch micro fill for ${itemsWithMissing.size} items")
@@ -608,6 +655,24 @@ Return format (array of ${itemsWithMissing.size} objects):
                     }
                 } catch (e: Exception) {
                     Log.w("Repository", "Batch micro fill failed: ${e.message}")
+                }
+            }
+
+            // Update cache for items that had missing micros filled
+            for (item in itemsWithMissing) {
+                val updated = item.nutrientsPer100g ?: continue
+                // Mark micro fill as done: replace exact 0.0 with tiny sentinel
+                // so that next cache lookup won't trigger micro fill again
+                item.nutrientsPer100g = updated.copy(
+                    chromium = if (updated.chromium == 0.0) 0.0001 else updated.chromium,
+                    iodine = if (updated.iodine == 0.0) 0.0001 else updated.iodine
+                )
+                val entityId = item.cacheEntityId ?: continue
+                try {
+                    db.foodCacheDao().updateNutrients(entityId, gson.toJson(item.nutrientsPer100g))
+                    Log.d("Repository", "Updated cache micros for '${item.foodNameRu}' (id=$entityId)")
+                } catch (e: Exception) {
+                    Log.w("Repository", "Failed to update cache for '${item.foodNameRu}': ${e.message}")
                 }
             }
         }

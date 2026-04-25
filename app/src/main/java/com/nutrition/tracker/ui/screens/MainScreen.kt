@@ -25,7 +25,8 @@ fun MainScreen(
     onNavigateToHistory: () -> Unit,
     onNavigateToEditProfile: () -> Unit,
     onNavigateToSavedProducts: () -> Unit = {},
-    onNavigateToSupplementScanner: () -> Unit = {}
+    onNavigateToSupplementScanner: () -> Unit = {},
+    onNavigateToStatistics: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val entries by viewModel.todayEntries.collectAsStateWithLifecycle()
@@ -147,6 +148,16 @@ fun MainScreen(
                     onClick = {
                         scope.launch { drawerState.close() }
                         onNavigateToHistory()
+                    },
+                    modifier = Modifier.padding(horizontal = 12.dp)
+                )
+                NavigationDrawerItem(
+                    icon = { Icon(Icons.Default.BarChart, contentDescription = null) },
+                    label = { Text("Статистика") },
+                    selected = false,
+                    onClick = {
+                        scope.launch { drawerState.close() }
+                        onNavigateToStatistics()
                     },
                     modifier = Modifier.padding(horizontal = 12.dp)
                 )
