@@ -267,15 +267,27 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
         for ((name, weight) in localParsed) {
             val cached = if (useCache) findInCache(name) else null
             if (cached != null) {
-                Log.d("Repository", "Cache HIT for '$name'")
-                cachedResults.add(PendingFood(
-                    foodNameRu = name,
-                    foodNameEn = cached.first.keyEn,
-                    weight = if (weight > 0) weight else 100.0,
-                    nutrientsPer100g = cached.second,
-                    fromCache = true,
-                    cacheEntityId = cached.first.id
-                ))
+                val n = cached.second
+                // Reject cached data with implausible macros: 0 protein + 0 carbs but has fat
+                // (valid only for pure fats/oils)
+                val isFatOnlyKey = listOf("масло", "олія", "oil", "butter", "lard", "ghee", "жир", "сало")
+                    .any { name.lowercase().contains(it) }
+                val cacheImplausible = !isFatOnlyKey && n.protein == 0.0 && n.carbs == 0.0 && n.fat > 0
+                if (cacheImplausible) {
+                    Log.w("Repository", "Cache REJECTED for '$name' (implausible: p=${n.protein} f=${n.fat} c=${n.carbs})")
+                    try { db.foodCacheDao().delete(cached.first) } catch (_: Exception) {}
+                    uncachedItems.add(name to weight)
+                } else {
+                    Log.d("Repository", "Cache HIT for '$name'")
+                    cachedResults.add(PendingFood(
+                        foodNameRu = name,
+                        foodNameEn = cached.first.keyEn,
+                        weight = if (weight > 0) weight else 100.0,
+                        nutrientsPer100g = cached.second,
+                        fromCache = true,
+                        cacheEntityId = cached.first.id
+                    ))
+                }
             } else {
                 uncachedItems.add(name to weight)
             }
@@ -284,7 +296,7 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
         // If everything was cached AND no items need micro fill, return immediately
         val cachedNeedMicroFill = cachedResults.any { item ->
             val n = item.nutrientsPer100g ?: return@any false
-            n.chromium == 0.0 || n.iodine == 0.0
+            n.chromium < 0.01 || n.iodine < 0.01
         }
         if (uncachedItems.isEmpty() && cachedResults.isNotEmpty() && !cachedNeedMicroFill) {
             Log.d("Repository", "All ${cachedResults.size} items from cache!")
@@ -350,6 +362,16 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
 - "шарлотка" → "apple sponge cake"
 - "запіканка" / "запеканка" → "cottage cheese casserole"
 
+ВАЖНО для составных блюд (салаты, супы):
+- НЕ перечисляй все ингредиенты в food_name_en — используй КОРОТКОЕ узнаваемое название
+- "салат з крабових паличок" / "салат из крабовых палочек" → "imitation crab salad"
+- "салат з яєць крабових паличок кукурудзи і огірка" → "imitation crab egg salad"
+- "салат цезар" / "салат цезарь" → "caesar salad"
+- "грецький салат" / "греческий салат" → "greek salad"
+- "салат з тунцем" / "салат с тунцом" → "tuna salad"
+- Если блюдо "без заправки" / "без майонеза" — НЕ включай "without dressing" в food_name_en
+- Для неизвестных составных салатов используй краткое описание: "mixed vegetable egg salad"
+
 Описание: $descriptionForAi
 
 Верни ТОЛЬКО JSON массив (даже если продукт один):
@@ -396,10 +418,25 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
         for ((idx, item) in aiPending.withIndex()) {
             Log.d("Repository", "Processing: '${item.foodNameRu}' / '${item.foodNameEn}', weight=${item.weight}g")
             try {
-                val usdaResult = usdaApi.searchFoods(query = item.foodNameEn)
+                // Strip negation phrases ("without X", "no X") — they describe ABSENCE
+                // of an ingredient and pollute USDA search (e.g. "without dressing" → matches dressings)
+                val negationCleaned = item.foodNameEn.replace(
+                    Regex("""\b(without|no|not|minus|free\s+from)\s+\w+""", RegexOption.IGNORE_CASE), ""
+                ).replace(Regex("\\s+"), " ").trim()
+
+                // Skip USDA for multi-ingredient composite dishes (AI handles them better)
+                // e.g. "egg crab stick corn cucumber salad" has 6 significant words
+                val significantWords = negationCleaned.lowercase().split("\\s+".toRegex())
+                    .filter { it.length >= 3 && it !in setOf("with", "and", "the", "from", "for") }
+                if (significantWords.size > 5) {
+                    Log.d("Repository", "Skipping USDA for composite dish (${significantWords.size} words): '$negationCleaned'")
+                    continue
+                }
+
+                val usdaResult = usdaApi.searchFoods(query = negationCleaned.ifBlank { item.foodNameEn })
                 // Relevance filter: USDA description must contain the LONGEST query word (main food)
                 // This prevents "lightly salted salmon" matching "Almonds, lightly salted"
-                val queryWords = item.foodNameEn.lowercase().split("\\s+".toRegex())
+                val queryWords = negationCleaned.lowercase().split("\\s+".toRegex())
                     .filter { it.length >= 3 }
                 val mainWord = queryWords.maxByOrNull { it.length } // longest word is most specific
                 val secondaryWords = queryWords.filter { it != mainWord }
@@ -550,7 +587,11 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
                     // Sanity check: macros from fat+protein+carbs shouldn't exceed reported calories by >30%
                     val macroCalories = corrected.protein * 4 + corrected.fat * 9 + corrected.carbs * 4
                     val reportedCalories = corrected.calories
-                    val sane = reportedCalories > 0 && (macroCalories <= reportedCalories * 1.3)
+                    // Also: 0 protein + 0 carbs is implausible for anything except pure fats/oils
+                    val isPureFat = listOf("oil", "butter", "lard", "ghee", "shortening", "fat", "grease")
+                        .any { negationCleaned.lowercase().contains(it) }
+                    val macroPlausible = isPureFat || !(corrected.protein == 0.0 && corrected.carbs == 0.0 && corrected.fat > 0)
+                    val sane = reportedCalories > 0 && (macroCalories <= reportedCalories * 1.3) && macroPlausible
                     Log.d("Repository", "USDA '${selectedFood.description}' [${selectedFood.dataType}]: " +
                         "cal=${corrected.calories}, p=${corrected.protein}, f=${corrected.fat}, c=${corrected.carbs} " +
                         "sane=$sane flourCorrected=$isFlourBased")
@@ -603,7 +644,14 @@ Return format (array of ${needAi.size} objects):
                 for ((listIdx, item) in needAi.withIndex()) {
                     if (listIdx < parsed.size) {
                         val m = parsed[listIdx]
-                        fun v(key: String) = (m[key] as? Number)?.toDouble() ?: 0.0
+                        fun v(key: String): Double {
+                            val raw = m[key]
+                            return when (raw) {
+                                is Number -> raw.toDouble()
+                                is String -> raw.toDoubleOrNull() ?: 0.0
+                                else -> 0.0
+                            }
+                        }
                         item.nutrientsPer100g = NutrientData(
                             calories = v("calories"), protein = v("protein"),
                             fat = v("fat"), carbs = v("carbs"), fiber = v("fiber"),
@@ -638,8 +686,9 @@ Return format (array of ${needAi.size} objects):
             val itemsWithMissing = allWithMacros.filter { item ->
                 val n = item.nutrientsPer100g!!
                 // USDA never has chromium/iodine, so also check those
+                // Use threshold < 0.01 for chromium/iodine to catch sentinel values (0.0001)
                 n.vitaminA == 0.0 || n.vitaminC == 0.0 || n.calcium == 0.0 || n.iron == 0.0
-                    || n.chromium == 0.0 || n.iodine == 0.0
+                    || n.chromium < 0.01 || n.iodine < 0.01
             }
             if (itemsWithMissing.isNotEmpty()) {
                 Log.d("Repository", "Batch micro fill for ${itemsWithMissing.size} items")
@@ -650,6 +699,11 @@ Return format (array of ${needAi.size} objects):
                     val microPrompt = """
 For each food below, provide ALL micronutrients PER 100 GRAMS using USDA reference values.
 Return ONLY a JSON array with one object per food, in the SAME ORDER.
+
+IMPORTANT: chromium and iodine are REQUIRED. Most foods contain trace amounts of chromium.
+Typical chromium values: buckwheat 4 mcg, egg 0.7 mcg, bread 1.3 mcg, beef 2 mcg, fish 1-2 mcg.
+Typical iodine values: seafood 30-160 mcg, dairy 20-50 mcg, egg 24 mcg, buckwheat 3.3 mcg.
+Do NOT return 0 for chromium or iodine unless the food truly has none (like pure sugar or oil).
 
 Foods:
 $foodsList
@@ -677,7 +731,14 @@ Return format (array of ${itemsWithMissing.size} objects):
                     for ((listIdx, item) in itemsWithMissing.withIndex()) {
                         if (listIdx < parsed.size) {
                             val m = parsed[listIdx]
-                            fun v(key: String) = (m[key] as? Number)?.toDouble() ?: 0.0
+                            fun v(key: String): Double {
+                                val raw = m[key]
+                                return when (raw) {
+                                    is Number -> raw.toDouble()
+                                    is String -> raw.toDoubleOrNull() ?: 0.0
+                                    else -> 0.0
+                                }
+                            }
                             val n = item.nutrientsPer100g!!
                             item.nutrientsPer100g = n.copy(
                                 vitaminA = if (n.vitaminA == 0.0) v("vitamin_a") else n.vitaminA,
@@ -703,8 +764,8 @@ Return format (array of ${itemsWithMissing.size} objects):
                                 copper = if (n.copper == 0.0) v("copper") else n.copper,
                                 manganese = if (n.manganese == 0.0) v("manganese") else n.manganese,
                                 selenium = if (n.selenium == 0.0) v("selenium") else n.selenium,
-                                iodine = if (n.iodine == 0.0) v("iodine") else n.iodine,
-                                chromium = if (n.chromium == 0.0) v("chromium") else n.chromium
+                                iodine = if (n.iodine < 0.01) v("iodine") else n.iodine,
+                                chromium = if (n.chromium < 0.01) v("chromium") else n.chromium
                             )
                         }
                     }
@@ -713,14 +774,15 @@ Return format (array of ${itemsWithMissing.size} objects):
                 }
             }
 
-            // Update cache for items that had missing micros filled
+            // Update cache for items that had micros filled
             for (item in itemsWithMissing) {
                 val updated = item.nutrientsPer100g ?: continue
-                // Mark micro fill as done: replace exact 0.0 with tiny sentinel
-                // so that next cache lookup won't trigger micro fill again
+                // Mark micro fill as done: set sentinel above the 0.01 threshold
+                // so next cache lookup won't trigger micro fill again.
+                // 0.02 mcg is negligible (~0.06% of daily chromium norm).
                 item.nutrientsPer100g = updated.copy(
-                    chromium = if (updated.chromium == 0.0) 0.0001 else updated.chromium,
-                    iodine = if (updated.iodine == 0.0) 0.0001 else updated.iodine
+                    chromium = if (updated.chromium < 0.01) 0.02 else updated.chromium,
+                    iodine = if (updated.iodine < 0.01) 0.02 else updated.iodine
                 )
                 val entityId = item.cacheEntityId ?: continue
                 try {
@@ -756,7 +818,14 @@ Return ONLY a JSON object:
                     val json = extractJson(text)
                     val map = gson.fromJson(json, Map::class.java) as? Map<String, Any>
                     if (map != null) {
-                        fun v(key: String) = (map[key] as? Number)?.toDouble() ?: 0.0
+                        fun v(key: String): Double {
+                            val raw = map[key]
+                            return when (raw) {
+                                is Number -> raw.toDouble()
+                                is String -> raw.toDoubleOrNull() ?: 0.0
+                                else -> 0.0
+                            }
+                        }
                         item.nutrientsPer100g = NutrientData(
                             calories = v("calories"), protein = v("protein"),
                             fat = v("fat"), carbs = v("carbs"), fiber = v("fiber"),
@@ -1142,7 +1211,14 @@ Return ONLY a JSON object with these fields:
 
         val map = gson.fromJson(json, Map::class.java) as? Map<String, Any>
             ?: throw Exception("Не удалось получить нутриенты для блюда")
-        fun v(key: String) = (map[key] as? Number)?.toDouble() ?: 0.0
+        fun v(key: String): Double {
+            val raw = map[key]
+            return when (raw) {
+                is Number -> raw.toDouble()
+                is String -> raw.toDoubleOrNull() ?: 0.0
+                else -> 0.0
+            }
+        }
         val nameEn = (map["food_name_en"] as? String) ?: dishName
 
         val per100g = NutrientData(
