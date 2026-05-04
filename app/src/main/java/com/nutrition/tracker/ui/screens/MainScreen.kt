@@ -10,6 +10,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nutrition.tracker.data.db.FoodCacheEntity
 import com.nutrition.tracker.data.db.FoodEntryEntity
 import com.nutrition.tracker.data.model.NutrientData
 import com.nutrition.tracker.ui.components.*
@@ -32,6 +33,7 @@ fun MainScreen(
     val entries by viewModel.todayEntries.collectAsStateWithLifecycle()
     val norms by viewModel.dailyNorms.collectAsStateWithLifecycle()
     val totals by viewModel.todayTotals.collectAsStateWithLifecycle()
+    val cachedFoods by viewModel.cachedFoods.collectAsStateWithLifecycle()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
 
@@ -209,7 +211,12 @@ fun MainScreen(
                         onScanBarcode = onNavigateToScanner,
                         onTakePhoto = onNavigateToCamera,
                         onScanSupplement = onNavigateToSupplementScanner,
-                        isLoading = uiState.isLoading
+                        isLoading = uiState.isLoading,
+                        cachedFoods = cachedFoods,
+                        onQuickAdd = { entry, weight ->
+                            viewModel.addCachedFoodToToday(entry, weight)
+                            viewModel.updateFoodInput("")
+                        }
                     )
                 }
 
@@ -314,6 +321,7 @@ fun MainScreen(
     } // ModalNavigationDrawer
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FoodInputSection(
     foodInput: String,
@@ -322,8 +330,79 @@ private fun FoodInputSection(
     onScanBarcode: () -> Unit,
     onTakePhoto: () -> Unit,
     onScanSupplement: () -> Unit,
-    isLoading: Boolean
+    isLoading: Boolean,
+    cachedFoods: List<FoodCacheEntity> = emptyList(),
+    onQuickAdd: (FoodCacheEntity, Double) -> Unit = { _, _ -> }
 ) {
+    var quickAddEntry by remember { mutableStateOf<FoodCacheEntity?>(null) }
+    var quickAddWeight by remember { mutableStateOf("100") }
+
+    // Quick-add weight dialog
+    quickAddEntry?.let { entry ->
+        val nutrients = try {
+            com.google.gson.Gson().fromJson(entry.nutrientsPer100gJson, NutrientData::class.java)
+        } catch (_: Exception) { NutrientData() }
+
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { quickAddEntry = null },
+            title = { Text("Добавить в приём пищи") },
+            text = {
+                Column {
+                    Text(entry.keyOriginal, style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = quickAddWeight,
+                        onValueChange = { quickAddWeight = it },
+                        label = { Text("Вес (г)") },
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                        ),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    val w = quickAddWeight.toDoubleOrNull() ?: 0.0
+                    if (w > 0) {
+                        val factor = w / 100.0
+                        Text(
+                            "%.0f ккал • Б %.1f • Ж %.1f • У %.1f".format(
+                                nutrients.calories * factor, nutrients.protein * factor,
+                                nutrients.fat * factor, nutrients.carbs * factor
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 8.dp)
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val w = quickAddWeight.toDoubleOrNull()
+                    if (w != null && w > 0) {
+                        onQuickAdd(entry, w)
+                        quickAddEntry = null
+                        quickAddWeight = "100"
+                    }
+                }) { Text("Добавить") }
+            },
+            dismissButton = {
+                TextButton(onClick = { quickAddEntry = null }) { Text("Отмена") }
+            }
+        )
+    }
+
+    // Compute suggestions
+    val suggestions = remember(foodInput, cachedFoods) {
+        if (foodInput.length < 2) emptyList()
+        else {
+            val q = foodInput.lowercase()
+            cachedFoods.filter {
+                it.keyOriginal.lowercase().contains(q) || it.keyEn.lowercase().contains(q)
+            }.take(5)
+        }
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
@@ -338,6 +417,63 @@ private fun FoodInputSection(
                 maxLines = 3,
                 minLines = 2
             )
+
+            // Suggestions dropdown
+            if (suggestions.isNotEmpty()) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                    )
+                ) {
+                    Column {
+                        suggestions.forEach { entry ->
+                            val nutrients = try {
+                                com.google.gson.Gson().fromJson(entry.nutrientsPer100gJson, NutrientData::class.java)
+                            } catch (_: Exception) { NutrientData() }
+                            Surface(
+                                onClick = {
+                                    quickAddWeight = "100"
+                                    quickAddEntry = entry
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            entry.keyOriginal,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            maxLines = 1,
+                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            "%.0f ккал • Б%.1f Ж%.1f У%.1f /100г".format(
+                                                nutrients.calories, nutrients.protein, nutrients.fat, nutrients.carbs
+                                            ),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Icon(
+                                        Icons.Default.Add,
+                                        contentDescription = "Добавить",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                            if (entry != suggestions.last()) {
+                                HorizontalDivider()
+                            }
+                        }
+                    }
+                }
+            }
 
             Spacer(Modifier.height(8.dp))
 

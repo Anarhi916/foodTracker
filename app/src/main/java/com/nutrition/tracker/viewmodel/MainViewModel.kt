@@ -461,4 +461,33 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun updateCachedFood(entry: FoodCacheEntity, nutrients: NutrientData) {
         viewModelScope.launch { repo.updateCachedFood(entry.id, nutrients) }
     }
+
+    fun updateCachedFoodFull(entry: FoodCacheEntity, keyOriginal: String, keyEn: String, nutrients: NutrientData) {
+        viewModelScope.launch { repo.updateCachedFoodFull(entry.id, keyOriginal, keyEn, nutrients) }
+    }
+
+    fun addManualCachedFood(keyOriginal: String, keyEn: String, nutrients: NutrientData, onError: (String) -> Unit) {
+        viewModelScope.launch {
+            try {
+                repo.addManualCachedFood(keyOriginal, keyEn, nutrients)
+            } catch (e: Exception) {
+                onError(e.message ?: "Ошибка")
+            }
+        }
+    }
+
+    fun addCachedFoodToToday(entry: FoodCacheEntity, weightGrams: Double) {
+        viewModelScope.launch {
+            val per100g = repo.parseNutrients(entry.nutrientsPer100gJson)
+            val factor = weightGrams / 100.0
+            val nutrients = per100g * factor
+            repo.addFoodEntry(
+                foodName = entry.keyOriginal,
+                weightGrams = weightGrams,
+                nutrients = nutrients,
+                source = "manual",
+                fromCache = true
+            )
+        }
+    }
 }

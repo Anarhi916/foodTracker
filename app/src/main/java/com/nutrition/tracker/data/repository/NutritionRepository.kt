@@ -183,6 +183,28 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
         db.foodCacheDao().updateNutrients(id, gson.toJson(nutrients))
     }
 
+    suspend fun updateCachedFoodFull(id: Long, keyOriginal: String, keyEn: String, nutrients: NutrientData) {
+        val normalized = normalizeKey(keyOriginal)
+        db.foodCacheDao().updateKeys(id, keyOriginal, normalized, keyEn)
+        db.foodCacheDao().updateNutrients(id, gson.toJson(nutrients))
+    }
+
+    suspend fun addManualCachedFood(keyOriginal: String, keyEn: String, nutrients: NutrientData) {
+        val normalized = normalizeKey(keyOriginal)
+        val normalizedEn = normalizeKey(keyEn)
+        // Don't duplicate
+        val existing = db.foodCacheDao().findByKeyEn(normalizedEn)
+        if (existing != null) throw Exception("Продукт с таким английским названием уже существует")
+        db.foodCacheDao().insert(
+            FoodCacheEntity(
+                keyOriginal = keyOriginal,
+                keyNormalized = normalized,
+                keyEn = keyEn,
+                nutrientsPer100gJson = gson.toJson(nutrients)
+            )
+        )
+    }
+
     private fun normalizeKey(name: String): String =
         name.lowercase().trim().replace(Regex("\\s+"), " ")
             .split(" ").sorted().joinToString(" ")
@@ -293,12 +315,8 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
             }
         }
 
-        // If everything was cached AND no items need micro fill, return immediately
-        val cachedNeedMicroFill = cachedResults.any { item ->
-            val n = item.nutrientsPer100g ?: return@any false
-            n.chromium < 0.01 || n.iodine < 0.01
-        }
-        if (uncachedItems.isEmpty() && cachedResults.isNotEmpty() && !cachedNeedMicroFill) {
+        // If everything was cached, return immediately
+        if (uncachedItems.isEmpty() && cachedResults.isNotEmpty()) {
             Log.d("Repository", "All ${cachedResults.size} items from cache!")
             return cachedResults.map { item ->
                 val factor = item.weight / 100.0
@@ -393,7 +411,9 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
 
         // Check cache again by English key (AI may have translated to a cached key)
         for (id in identities) {
-            val nameRu = id.foodName.ifBlank { descriptionForAi }
+            // Strip weight from AI food_name — AI sometimes includes it
+            val rawName = id.foodName.ifBlank { descriptionForAi }
+            val nameRu = rawName.replace(Regex("""\s*\d+(?:[.,]\d+)?\s*(г|гр|грамм|g|ml|мл|кг|kg)\b""", RegexOption.IGNORE_CASE), "").trim()
             val nameEn = id.foodNameEn.ifBlank { id.foodName }
             val weight = if (id.weightGrams > 0) id.weightGrams else 100.0
 
@@ -679,21 +699,17 @@ Return format (array of ${needAi.size} objects):
 
         } // end if (uncachedItems.isNotEmpty())
 
-        // Step 4: ONE batch AI call to fill missing micros for ALL items that have macros
-        // Include cached items too — USDA never has chromium/iodine, so cached data is also incomplete
-        val allWithMacros = (aiPending + cachedResults).filter { it.nutrientsPer100g != null }
-        if (allWithMacros.isNotEmpty()) {
-            val itemsWithMissing = allWithMacros.filter { item ->
-                val n = item.nutrientsPer100g!!
-                // USDA never has chromium/iodine, so also check those
-                // Use threshold < 0.01 for chromium/iodine to catch sentinel values (0.0001)
-                n.vitaminA == 0.0 || n.vitaminC == 0.0 || n.calcium == 0.0 || n.iron == 0.0
-                    || n.chromium < 0.01 || n.iodine < 0.01
-            }
-            if (itemsWithMissing.isNotEmpty()) {
-                Log.d("Repository", "Batch micro fill for ${itemsWithMissing.size} items")
+        // Step 4: ONE batch AI call to fill missing micros for NEW items from USDA only
+        // Cached items are NOT re-filled — user may have manually edited them
+        val usdaItemsWithMissingMicros = aiPending.filter { item ->
+            val n = item.nutrientsPer100g ?: return@filter false
+            // Only fill if this came from USDA (not from batch AI which already has all fields)
+            n.chromium < 0.01 || n.iodine < 0.01
+        }
+        if (usdaItemsWithMissingMicros.isNotEmpty()) {
+                Log.d("Repository", "Batch micro fill for ${usdaItemsWithMissingMicros.size} new USDA items")
                 try {
-                    val foodsList = itemsWithMissing.mapIndexed { i, item ->
+                    val foodsList = usdaItemsWithMissingMicros.mapIndexed { i, item ->
                         "${i + 1}. ${item.foodNameEn}"
                     }.joinToString("\n")
                     val microPrompt = """
@@ -708,7 +724,7 @@ Do NOT return 0 for chromium or iodine unless the food truly has none (like pure
 Foods:
 $foodsList
 
-Return format (array of ${itemsWithMissing.size} objects):
+Return format (array of ${usdaItemsWithMissingMicros.size} objects):
 [
   {
     "vitamin_a": <mcg>, "vitamin_b1": <mg>, "vitamin_b2": <mg>, "vitamin_b3": <mg>,
@@ -728,7 +744,7 @@ Return format (array of ${itemsWithMissing.size} objects):
                     val json = extractJsonContent(text)
                     Log.d("Repository", "Batch micro response: $json")
                     val parsed = parseBatchNutrientArray(json)
-                    for ((listIdx, item) in itemsWithMissing.withIndex()) {
+                    for ((listIdx, item) in usdaItemsWithMissingMicros.withIndex()) {
                         if (listIdx < parsed.size) {
                             val m = parsed[listIdx]
                             fun v(key: String): Double {
@@ -772,26 +788,7 @@ Return format (array of ${itemsWithMissing.size} objects):
                 } catch (e: Exception) {
                     Log.w("Repository", "Batch micro fill failed: ${e.message}")
                 }
-            }
-
-            // Update cache for items that had micros filled
-            for (item in itemsWithMissing) {
-                val updated = item.nutrientsPer100g ?: continue
-                // Mark micro fill as done: set sentinel above the 0.01 threshold
-                // so next cache lookup won't trigger micro fill again.
-                // 0.02 mcg is negligible (~0.06% of daily chromium norm).
-                item.nutrientsPer100g = updated.copy(
-                    chromium = if (updated.chromium < 0.01) 0.02 else updated.chromium,
-                    iodine = if (updated.iodine < 0.01) 0.02 else updated.iodine
-                )
-                val entityId = item.cacheEntityId ?: continue
-                try {
-                    db.foodCacheDao().updateNutrients(entityId, gson.toJson(item.nutrientsPer100g))
-                    Log.d("Repository", "Updated cache micros for '${item.foodNameRu}' (id=$entityId)")
-                } catch (e: Exception) {
-                    Log.w("Repository", "Failed to update cache for '${item.foodNameRu}': ${e.message}")
-                }
-            }
+            // No need to update cache here — new items will be cached in Step 5 with filled micros
         }
 
         // Step 5: Cache all newly resolved foods and build final results

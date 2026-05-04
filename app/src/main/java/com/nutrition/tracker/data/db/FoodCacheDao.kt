@@ -23,6 +23,9 @@ interface FoodCacheDao {
     @Query("UPDATE food_cache SET nutrientsPer100gJson = :json WHERE id = :id")
     suspend fun updateNutrients(id: Long, json: String)
 
+    @Query("UPDATE food_cache SET keyOriginal = :keyOriginal, keyNormalized = :keyNormalized, keyEn = :keyEn WHERE id = :id")
+    suspend fun updateKeys(id: Long, keyOriginal: String, keyNormalized: String, keyEn: String)
+
     @Query("DELETE FROM food_cache")
     suspend fun deleteAll()
 }
