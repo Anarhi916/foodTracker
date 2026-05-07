@@ -85,6 +85,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val cachedFoods: StateFlow<List<FoodCacheEntity>> = repo.getAllCachedFoods()
+        .map { list -> list.filter { !it.keyOriginal.startsWith("barcode:") && !it.keyOriginal.startsWith("supplement:") } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init {

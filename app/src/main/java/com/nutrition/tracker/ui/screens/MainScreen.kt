@@ -14,6 +14,7 @@ import com.nutrition.tracker.data.db.FoodCacheEntity
 import com.nutrition.tracker.data.db.FoodEntryEntity
 import com.nutrition.tracker.data.model.NutrientData
 import com.nutrition.tracker.ui.components.*
+import com.nutrition.tracker.util.transliterateToLatin
 import com.nutrition.tracker.viewmodel.MainViewModel
 import kotlinx.coroutines.launch
 
@@ -397,8 +398,11 @@ private fun FoodInputSection(
         if (foodInput.length < 2) emptyList()
         else {
             val q = foodInput.lowercase()
+            val qTranslit = transliterateToLatin(q)
             cachedFoods.filter {
                 it.keyOriginal.lowercase().contains(q) || it.keyEn.lowercase().contains(q)
+                        || it.keyOriginal.lowercase().contains(qTranslit)
+                        || it.keyEn.lowercase().contains(qTranslit)
             }.take(5)
         }
     }
