@@ -221,11 +221,16 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
     }
 
     private suspend fun saveToCache(keyOriginal: String, keyEn: String, nutrientsPer100g: NutrientData) {
-        val normalizedEn = normalizeKey(keyEn)
-        // Only one row per product: if same keyEn already exists, don't duplicate
-        val existing = db.foodCacheDao().findByKeyEn(normalizedEn)
-        if (existing != null) return
         val normalized = normalizeKey(keyOriginal)
+        // Don't duplicate if same normalized key already exists
+        val existingByKey = db.foodCacheDao().findByNormalizedKey(normalized)
+        if (existingByKey != null) return
+        // For non-technical keys, also check by English name to avoid product duplicates
+        if (!keyOriginal.startsWith("barcode:") && !keyOriginal.startsWith("supplement:")) {
+            val normalizedEn = normalizeKey(keyEn)
+            val existingByEn = db.foodCacheDao().findByKeyEn(normalizedEn)
+            if (existingByEn != null) return
+        }
         db.foodCacheDao().insert(
             FoodCacheEntity(
                 keyOriginal = keyOriginal,

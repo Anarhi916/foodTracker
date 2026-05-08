@@ -1,14 +1,18 @@
 package com.nutrition.tracker.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.nutrition.tracker.data.model.NutrientData
@@ -44,7 +48,23 @@ fun StatisticsScreen(
     var numDays by remember { mutableStateOf(7L) }
     var isLoading by remember { mutableStateOf(false) }
 
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
+
+    // CSV content to be written when user picks a save location
+    var pendingCsvContent by remember { mutableStateOf<String?>(null) }
+
+    val saveFileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        uri?.let {
+            val content = pendingCsvContent ?: return@let
+            context.contentResolver.openOutputStream(it)?.use { out ->
+                out.write(content.toByteArray(Charsets.UTF_8))
+            }
+            pendingCsvContent = null
+        }
+    }
 
     // Compute effective dates based on period selection
     val effectiveStart = when (selectedPeriod) {
@@ -204,6 +224,38 @@ fun StatisticsScreen(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = {
+                                scope.launch {
+                                    val entries = viewModel.getEntriesForDateRange(
+                                        effectiveStart.format(formatter),
+                                        effectiveEnd.format(formatter)
+                                    )
+                                    val csv = buildString {
+                                        append("\uFEFF")
+                                        appendLine("Дата,Продукт,Вес (г)")
+                                        var lastDate = ""
+                                        entries.sortedBy { it.date }.forEach { entry ->
+                                            if (lastDate.isNotEmpty() && entry.date != lastDate) {
+                                                appendLine("${entry.date},,")
+                                            }
+                                            lastDate = entry.date
+                                            val escapedName = entry.foodName.replace("\"", "\"\"")
+                                            appendLine("${entry.date},\"$escapedName\",${entry.weightGrams.toInt()}")
+                                        }
+                                    }
+                                    pendingCsvContent = csv
+                                    val fileName = "nutrition_${effectiveStart.format(formatter)}_${effectiveEnd.format(formatter)}.csv"
+                                    saveFileLauncher.launch(fileName)
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Экспорт в Excel")
+                        }
                     }
                 }
             }
