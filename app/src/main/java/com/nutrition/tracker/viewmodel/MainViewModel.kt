@@ -39,7 +39,13 @@ data class MainUiState(
     val supplementName: String? = null,
     val supplementNutrientsPerServing: NutrientData? = null,
     val supplementServingSize: String = "",
-    val supplementServings: String = "1"
+    val supplementServings: String = "1",
+    // Photo model choice dialog
+    val showPhotoModelChoiceDialog: Boolean = false,
+    val usePaidPhotoModel: Boolean = false,
+    // Paid photo: nutrients per 100g for local recalculation
+    val photoNutrientsPer100g: NutrientData? = null,
+    val photoFoodNameEn: String = ""
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -336,19 +342,49 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
+    // --- Photo model choice ---
+    fun showPhotoModelChoice() {
+        _uiState.value = _uiState.value.copy(showPhotoModelChoiceDialog = true)
+    }
+
+    fun dismissPhotoModelChoice() {
+        _uiState.value = _uiState.value.copy(showPhotoModelChoiceDialog = false)
+    }
+
+    fun selectPhotoModel(usePaid: Boolean) {
+        _uiState.value = _uiState.value.copy(
+            showPhotoModelChoiceDialog = false,
+            usePaidPhotoModel = usePaid
+        )
+    }
+
     // --- Photo ---
     fun analyzePhoto(imageBytes: ByteArray) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             try {
-                // Step 1: Vision AI identifies food name + weight only
-                val (name, weight) = repo.identifyFoodFromPhoto(imageBytes)
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    showPhotoEditDialog = true,
-                    photoFoodName = name,
-                    photoWeight = weight.toInt().toString()
-                )
+                val usePaid = _uiState.value.usePaidPhotoModel
+                if (usePaid) {
+                    // Paid: single call — identify + nutrients per 100g in one prompt
+                    val result = repo.identifyAndAnalyzeFoodFromPhoto(imageBytes)
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        showPhotoEditDialog = true,
+                        photoFoodName = result.foodName,
+                        photoFoodNameEn = result.foodNameEn,
+                        photoWeight = result.weightGrams.toInt().toString(),
+                        photoNutrientsPer100g = result.nutrients
+                    )
+                } else {
+                    // Free: Step 1 — identify food name + weight only
+                    val (name, weight) = repo.identifyFoodFromPhoto(imageBytes)
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        showPhotoEditDialog = true,
+                        photoFoodName = name,
+                        photoWeight = weight.toInt().toString()
+                    )
+                }
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
@@ -377,7 +413,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (foodDesc.isBlank()) return
 
         val weightGrams = weight.toDoubleOrNull() ?: 200.0
+        val per100g = state.photoNutrientsPer100g
 
+        if (per100g != null) {
+            // Paid flow: nutrients already obtained, just recalculate for weight
+            val factor = weightGrams / 100.0
+            val result = FoodAnalysisResult(
+                foodName = foodDesc,
+                foodNameEn = state.photoFoodNameEn,
+                weightGrams = weightGrams,
+                nutrients = per100g * factor,
+                fromCache = false
+            )
+            _uiState.value = _uiState.value.copy(
+                showPhotoEditDialog = false,
+                pendingFood = result,
+                pendingFoodWeight = result.weightGrams,
+                pendingFoodSource = "photo",
+                showConfirmDialog = true,
+                photoNutrientsPer100g = null,
+                photoFoodNameEn = ""
+            )
+            return
+        }
+
+        // Free flow: need second API call for nutrients
         _uiState.value = _uiState.value.copy(
             showPhotoEditDialog = false,
             isLoading = true,

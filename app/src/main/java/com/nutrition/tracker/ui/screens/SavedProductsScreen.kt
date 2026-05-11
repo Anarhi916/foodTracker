@@ -173,7 +173,6 @@ fun SavedProductsScreen(
             Field("Марганец", "мг", { it.manganese }, { n, v -> n.copy(manganese = v) }),
             Field("Селен", "мкг", { it.selenium }, { n, v -> n.copy(selenium = v) }),
             Field("Йод", "мкг", { it.iodine }, { n, v -> n.copy(iodine = v) }),
-            Field("Хром", "мкг", { it.chromium }, { n, v -> n.copy(chromium = v) }),
         )
     }
 

@@ -272,7 +272,7 @@ fun MineralsProgressSection(
     val normsList = norms.mineralsList()
     val mineralKeys = listOf(
         "calcium", "iron", "magnesium", "phosphorus", "potassium",
-        "sodium", "zinc", "copper", "manganese", "selenium", "iodine", "chromium"
+        "sodium", "zinc", "copper", "manganese", "selenium", "iodine"
     )
     // Upper limits: iron,selenium,copper,iodine strict (toxic); sodium strict; rest moderate
     val mineralUpperRatios = listOf(
@@ -286,8 +286,7 @@ fun MineralsProgressSection(
         1.3,  // copper - toxic
         1.5,  // manganese
         1.3,  // selenium - toxic
-        1.3,  // iodine - toxic
-        1.5   // chromium
+        1.3   // iodine - toxic
     )
 
     Card(

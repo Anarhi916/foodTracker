@@ -514,22 +514,5 @@ object NutrientTopFoods {
             FoodSource("Клубника", 13.0),
             FoodSource("Кукуруза", 5.0),
         )),
-        "chromium" to NutrientInfo(35.0, "мкг", listOf(
-            FoodSource("Брокколи", 22.0),
-            FoodSource("Виноградный сок", 7.5),
-            FoodSource("Картофель", 2.7),
-            FoodSource("Чеснок", 3.0),
-            FoodSource("Говядина постная", 2.0),
-            FoodSource("Индейка грудка", 1.7),
-            FoodSource("Апельсиновый сок", 2.2),
-            FoodSource("Банан", 1.0),
-            FoodSource("Яблоко", 1.4),
-            FoodSource("Хлеб цельнозерновой", 1.0),
-            FoodSource("Зелёная фасоль", 1.1),
-            FoodSource("Томат", 0.9),
-            FoodSource("Печень говяжья", 1.6),
-            FoodSource("Сыр чеддер", 0.6),
-            FoodSource("Яйцо куриное", 0.5),
-        )),
     )
 }

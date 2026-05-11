@@ -33,8 +33,6 @@ class NutritionRepository(
         "arcee-ai/trinity-large-preview:free",           // fast, non-thinking, good JSON
         "nvidia/nemotron-3-nano-30b-a3b:free",           // fast thinking model
         "openai/gpt-oss-20b:free",                       // reliable backup
-        "google/gemma-3-12b-it:free",                    // good but sometimes 429
-        "google/gemma-3-27b-it:free",                    // good but sometimes 429
         "google/gemma-4-31b-it:free",                    // good but often 429
         "z-ai/glm-4.5-air:free",                         // slower but works
         "minimax/minimax-m2.5:free"                      // very slow (>60s), last resort
@@ -43,9 +41,8 @@ class NutritionRepository(
     // Fallback vision models (support image_url input)
     private val visionModels = listOf(
         "google/gemma-4-31b-it:free",
-        "google/gemma-3-27b-it:free",
-        "google/gemma-3-12b-it:free",
-        "google/gemma-3-4b-it:free",
+        "google/gemma-4-26b-a4b-it:free",
+        "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
         "nvidia/nemotron-nano-12b-v2-vl:free"            // thinking model, needs more tokens
     )
 
@@ -92,7 +89,7 @@ User data:
 IMPORTANT: All values MUST be in the units specified. Pay special attention:
 - copper is in MG (milligrams), NOT mcg. Typical adult RDA is 0.9 mg.
 - manganese is in MG. Typical adult AI is 2.3 mg.
-- selenium, iodine, chromium are in MCG (micrograms).
+- selenium, iodine are in MCG (micrograms).
 
 Calculate daily norms and return ONLY a JSON object with this EXACT structure (all numbers, no text):
 {
@@ -124,8 +121,7 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
   "copper": <mg, e.g. 0.9>,
   "manganese": <mg, e.g. 2.3>,
   "selenium": <mcg>,
-  "iodine": <mcg>,
-  "chromium": <mcg>
+  "iodine": <mcg>
 }
 """.trimIndent()
 
@@ -150,8 +146,6 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
         if (result.copper > 10) result = result.copy(copper = result.copper / 1000.0)
         // Manganese: AI ~2.3 mg. If >50, likely used mcg
         if (result.manganese > 50) result = result.copy(manganese = result.manganese / 1000.0)
-        // Chromium should be mcg (25-45). If <1, AI probably used mg → multiply by 1000
-        if (result.chromium > 0 && result.chromium < 1) result = result.copy(chromium = result.chromium * 1000.0)
         // Selenium should be mcg (55-70). If <1, AI probably used mg
         if (result.selenium > 0 && result.selenium < 1) result = result.copy(selenium = result.selenium * 1000.0)
         return result
@@ -584,7 +578,7 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
                         potassium = nMap[N.POTASSIUM] ?: 0.0, sodium = nMap[N.SODIUM] ?: 0.0,
                         zinc = nMap[N.ZINC] ?: 0.0, copper = nMap[N.COPPER] ?: 0.0,
                         manganese = nMap[N.MANGANESE] ?: 0.0, selenium = nMap[N.SELENIUM] ?: 0.0,
-                        iodine = nMap[N.IODINE] ?: 0.0, chromium = nMap[N.CHROMIUM] ?: 0.0
+                        iodine = nMap[N.IODINE] ?: 0.0
                     )
                     // Correct US enrichment bias for flour-based foods
                     // In the US, flour is fortified with B9, B1, B2, B3, iron — not typical for Eastern Europe
@@ -653,7 +647,7 @@ Return format (array of ${needAi.size} objects):
     "vitamin_b12": <mcg>, "vitamin_c": <mg>, "vitamin_d": <mcg>, "vitamin_e": <mg>,
     "vitamin_k": <mcg>, "calcium": <mg>, "iron": <mg>, "magnesium": <mg>,
     "phosphorus": <mg>, "potassium": <mg>, "sodium": <mg>, "zinc": <mg>,
-    "copper": <mg>, "manganese": <mg>, "selenium": <mcg>, "iodine": <mcg>, "chromium": <mcg>
+    "copper": <mg>, "manganese": <mg>, "selenium": <mcg>, "iodine": <mcg>
   },
   ...
 ]
@@ -691,8 +685,7 @@ Return format (array of ${needAi.size} objects):
                             phosphorus = v("phosphorus"), potassium = v("potassium"),
                             sodium = v("sodium"), zinc = v("zinc"),
                             copper = v("copper"), manganese = v("manganese"),
-                            selenium = v("selenium"), iodine = v("iodine"),
-                            chromium = v("chromium")
+                            selenium = v("selenium"), iodine = v("iodine")
                         )
                         Log.d("Repository", "Batch AI '${item.foodNameEn}': cal/100g=${item.nutrientsPer100g!!.calories}")
                     }
@@ -709,7 +702,7 @@ Return format (array of ${needAi.size} objects):
         val usdaItemsWithMissingMicros = aiPending.filter { item ->
             val n = item.nutrientsPer100g ?: return@filter false
             // Only fill if this came from USDA (not from batch AI which already has all fields)
-            n.chromium < 0.01 || n.iodine < 0.01
+            n.iodine < 0.01
         }
         if (usdaItemsWithMissingMicros.isNotEmpty()) {
                 Log.d("Repository", "Batch micro fill for ${usdaItemsWithMissingMicros.size} new USDA items")
@@ -721,10 +714,9 @@ Return format (array of ${needAi.size} objects):
 For each food below, provide ALL micronutrients PER 100 GRAMS using USDA reference values.
 Return ONLY a JSON array with one object per food, in the SAME ORDER.
 
-IMPORTANT: chromium and iodine are REQUIRED. Most foods contain trace amounts of chromium.
-Typical chromium values: buckwheat 4 mcg, egg 0.7 mcg, bread 1.3 mcg, beef 2 mcg, fish 1-2 mcg.
+IMPORTANT: iodine is REQUIRED.
 Typical iodine values: seafood 30-160 mcg, dairy 20-50 mcg, egg 24 mcg, buckwheat 3.3 mcg.
-Do NOT return 0 for chromium or iodine unless the food truly has none (like pure sugar or oil).
+Do NOT return 0 for iodine unless the food truly has none (like pure sugar or oil).
 
 Foods:
 $foodsList
@@ -737,7 +729,7 @@ Return format (array of ${usdaItemsWithMissingMicros.size} objects):
     "vitamin_b12": <mcg>, "vitamin_c": <mg>, "vitamin_d": <mcg>, "vitamin_e": <mg>,
     "vitamin_k": <mcg>, "calcium": <mg>, "iron": <mg>, "magnesium": <mg>,
     "phosphorus": <mg>, "potassium": <mg>, "sodium": <mg>, "zinc": <mg>,
-    "copper": <mg>, "manganese": <mg>, "selenium": <mcg>, "iodine": <mcg>, "chromium": <mcg>
+    "copper": <mg>, "manganese": <mg>, "selenium": <mcg>, "iodine": <mcg>
   },
   ...
 ]
@@ -785,8 +777,7 @@ Return format (array of ${usdaItemsWithMissingMicros.size} objects):
                                 copper = if (n.copper == 0.0) v("copper") else n.copper,
                                 manganese = if (n.manganese == 0.0) v("manganese") else n.manganese,
                                 selenium = if (n.selenium == 0.0) v("selenium") else n.selenium,
-                                iodine = if (n.iodine < 0.01) v("iodine") else n.iodine,
-                                chromium = if (n.chromium < 0.01) v("chromium") else n.chromium
+                                iodine = if (n.iodine < 0.01) v("iodine") else n.iodine
                             )
                         }
                     }
@@ -811,7 +802,7 @@ Return ONLY a JSON object:
 "vitamin_b6": <mg>, "vitamin_b7": <mcg>, "vitamin_b9": <mcg>, "vitamin_b12": <mcg>,
 "vitamin_d": <mcg>, "vitamin_e": <mg>, "vitamin_k": <mcg>,
 "magnesium": <mg>, "phosphorus": <mg>, "potassium": <mg>, "sodium": <mg>,
-"zinc": <mg>, "copper": <mg>, "manganese": <mg>, "selenium": <mcg>, "iodine": <mcg>, "chromium": <mcg>}
+"zinc": <mg>, "copper": <mg>, "manganese": <mg>, "selenium": <mcg>, "iodine": <mcg>}
 """.trimIndent()
                     val text = callOpenRouterWithRetry(
                         messages = listOf(OpenRouterMessage(role = "user", content = fallbackPrompt)),
@@ -842,8 +833,7 @@ Return ONLY a JSON object:
                             phosphorus = v("phosphorus"), potassium = v("potassium"),
                             sodium = v("sodium"), zinc = v("zinc"),
                             copper = v("copper"), manganese = v("manganese"),
-                            selenium = v("selenium"), iodine = v("iodine"),
-                            chromium = v("chromium")
+                            selenium = v("selenium"), iodine = v("iodine")
                         )
                         Log.d("Repository", "Fallback AI success for '${item.foodNameEn}': cal=${item.nutrientsPer100g!!.calories}")
                     }
@@ -1041,7 +1031,6 @@ Return ONLY a JSON object:
         if (nutrients.manganese == 0.0) missing.add("manganese (mg)")
         if (nutrients.selenium == 0.0) missing.add("selenium (mcg)")
         if (nutrients.iodine == 0.0) missing.add("iodine (mcg)")
-        if (nutrients.chromium == 0.0) missing.add("chromium (mcg)")
         if (missing.isEmpty()) return nutrients
         try {
             val prompt = """
@@ -1079,8 +1068,7 @@ Return ONLY JSON, e.g.: {"vitamin_a": 45, "calcium": 11}
                 copper = if (nutrients.copper == 0.0) v("copper") else nutrients.copper,
                 manganese = if (nutrients.manganese == 0.0) v("manganese") else nutrients.manganese,
                 selenium = if (nutrients.selenium == 0.0) v("selenium") else nutrients.selenium,
-                iodine = if (nutrients.iodine == 0.0) v("iodine") else nutrients.iodine,
-                chromium = if (nutrients.chromium == 0.0) v("chromium") else nutrients.chromium
+                iodine = if (nutrients.iodine == 0.0) v("iodine") else nutrients.iodine
             )
         } catch (e: Exception) {
             Log.w("Repository", "AI micro fill failed: ${e.message}")
@@ -1088,7 +1076,7 @@ Return ONLY JSON, e.g.: {"vitamin_a": 45, "calcium": 11}
         }
     }
 
-    suspend fun identifyFoodFromPhoto(imageBytes: ByteArray): Pair<String, Double> {
+    suspend fun identifyFoodFromPhoto(imageBytes: ByteArray, usePaidModel: Boolean = false): Pair<String, Double> {
         val base64 = Base64.encodeToString(imageBytes, Base64.NO_WRAP)
         val prompt = """
 Ты профессиональный диетолог. Посмотри на фото еды и определи:
@@ -1112,8 +1100,9 @@ Return ONLY JSON, e.g.: {"vitamin_a": 45, "calcium": 11}
             )
         )
 
+        val models = if (usePaidModel) normsModels else visionModels
         val messages = listOf(OpenRouterMessage(role = "user", content = contentParts))
-        val text = callOpenRouterWithRetry(messages = messages, models = visionModels)
+        val text = callOpenRouterWithRetry(messages = messages, models = models)
         val json = extractJsonContent(text)
         Log.d("Repository", "Photo identify response: $json")
 
@@ -1126,6 +1115,88 @@ Return ONLY JSON, e.g.: {"vitamin_a": 45, "calcium": 11}
             Log.w("Repository", "Failed to parse photo identify: ${e.message}")
             Pair("Блюдо", 200.0)
         }
+    }
+
+    suspend fun identifyAndAnalyzeFoodFromPhoto(imageBytes: ByteArray): FoodAnalysisResult {
+        val base64 = Base64.encodeToString(imageBytes, Base64.NO_WRAP)
+        val prompt = """
+You are a professional nutritionist. Look at this food photo and:
+1. Identify the dish/food name IN RUSSIAN (detailed, including ingredients)
+2. Estimate total portion weight in grams
+3. Provide nutritional values PER 100 GRAMS for this complete dish
+
+Return ONLY a JSON object:
+{"food_name": "<название на русском>", "food_name_en": "<English translation>", "weight_grams": <number>,
+"calories": <kcal>, "protein": <g>, "fat": <g>, "carbs": <g>, "fiber": <g>,
+"vitamin_a": <mcg>, "vitamin_b1": <mg>, "vitamin_b2": <mg>, "vitamin_b3": <mg>,
+"vitamin_b5": <mg>, "vitamin_b6": <mg>, "vitamin_b7": <mcg>, "vitamin_b9": <mcg>,
+"vitamin_b12": <mcg>, "vitamin_c": <mg>, "vitamin_d": <mcg>, "vitamin_e": <mg>,
+"vitamin_k": <mcg>, "calcium": <mg>, "iron": <mg>, "magnesium": <mg>,
+"phosphorus": <mg>, "potassium": <mg>, "sodium": <mg>, "zinc": <mg>,
+"copper": <mg>, "manganese": <mg>, "selenium": <mcg>, "iodine": <mcg>}
+""".trimIndent()
+
+        val contentParts = listOf(
+            OpenRouterContentPart(type = "text", text = prompt),
+            OpenRouterContentPart(
+                type = "image_url",
+                imageUrl = OpenRouterImageUrl(url = "data:image/jpeg;base64,$base64")
+            )
+        )
+
+        val messages = listOf(OpenRouterMessage(role = "user", content = contentParts))
+        val text = callOpenRouterWithRetry(messages = messages, models = normsModels)
+        val json = extractJsonContent(text)
+        Log.d("Repository", "Paid photo full analysis response: $json")
+
+        val map = gson.fromJson(json, Map::class.java) as? Map<String, Any>
+            ?: throw Exception("Не удалось распознать блюдо по фото")
+
+        fun v(key: String): Double {
+            val raw = map[key]
+            return when (raw) {
+                is Number -> raw.toDouble()
+                is String -> raw.toDoubleOrNull() ?: 0.0
+                else -> 0.0
+            }
+        }
+
+        val foodName = (map["food_name"] as? String) ?: "Блюдо"
+        val nameEn = (map["food_name_en"] as? String) ?: foodName
+        val weightGrams = (map["weight_grams"] as? Number)?.toDouble() ?: 200.0
+
+        val per100g = NutrientData(
+            calories = v("calories"), protein = v("protein"),
+            fat = v("fat"), carbs = v("carbs"), fiber = v("fiber"),
+            vitaminA = v("vitamin_a"), vitaminB1 = v("vitamin_b1"),
+            vitaminB2 = v("vitamin_b2"), vitaminB3 = v("vitamin_b3"),
+            vitaminB5 = v("vitamin_b5"), vitaminB6 = v("vitamin_b6"),
+            vitaminB7 = v("vitamin_b7"), vitaminB9 = v("vitamin_b9"),
+            vitaminB12 = v("vitamin_b12"), vitaminC = v("vitamin_c"),
+            vitaminD = v("vitamin_d"), vitaminE = v("vitamin_e"),
+            vitaminK = v("vitamin_k"), calcium = v("calcium"),
+            iron = v("iron"), magnesium = v("magnesium"),
+            phosphorus = v("phosphorus"), potassium = v("potassium"),
+            sodium = v("sodium"), zinc = v("zinc"),
+            copper = v("copper"), manganese = v("manganese"),
+            selenium = v("selenium"), iodine = v("iodine")
+        )
+
+        // Cache it
+        try {
+            saveToCache(foodName, nameEn, per100g)
+            Log.d("Repository", "Cached paid photo dish '$foodName' / '$nameEn'")
+        } catch (e: Exception) {
+            Log.w("Repository", "Failed to cache paid photo dish: ${e.message}")
+        }
+
+        return FoodAnalysisResult(
+            foodName = foodName,
+            foodNameEn = nameEn,
+            weightGrams = weightGrams,
+            nutrients = per100g,
+            fromCache = false
+        )
     }
 
     suspend fun analyzeFoodPhoto(imageBytes: ByteArray): FoodAnalysisResult {
@@ -1146,7 +1217,7 @@ Return ONLY JSON, e.g.: {"vitamin_a": 45, "calcium": 11}
     "vitamin_b12": <mcg на 100г>, "vitamin_c": <mg на 100г>, "vitamin_d": <mcg на 100г>, "vitamin_e": <mg на 100г>,
     "vitamin_k": <mcg на 100г>, "calcium": <mg на 100г>, "iron": <mg на 100г>, "magnesium": <mg на 100г>,
     "phosphorus": <mg на 100г>, "potassium": <mg на 100г>, "sodium": <mg на 100г>, "zinc": <mg на 100г>,
-    "copper": <mg на 100г>, "manganese": <mg на 100г>, "selenium": <mcg на 100г>, "iodine": <mcg на 100г>, "chromium": <mcg на 100г>
+    "copper": <mg на 100г>, "manganese": <mg на 100г>, "selenium": <mcg на 100г>, "iodine": <mcg на 100г>
   }
 }
 """.trimIndent()
@@ -1201,7 +1272,7 @@ Return ONLY a JSON object with these fields:
 "vitamin_b12": <mcg>, "vitamin_c": <mg>, "vitamin_d": <mcg>, "vitamin_e": <mg>,
 "vitamin_k": <mcg>, "calcium": <mg>, "iron": <mg>, "magnesium": <mg>,
 "phosphorus": <mg>, "potassium": <mg>, "sodium": <mg>, "zinc": <mg>,
-"copper": <mg>, "manganese": <mg>, "selenium": <mcg>, "iodine": <mcg>, "chromium": <mcg>}
+"copper": <mg>, "manganese": <mg>, "selenium": <mcg>, "iodine": <mcg>}
 """.trimIndent()
 
         val text = callOpenRouterWithRetry(
@@ -1237,8 +1308,7 @@ Return ONLY a JSON object with these fields:
             phosphorus = v("phosphorus"), potassium = v("potassium"),
             sodium = v("sodium"), zinc = v("zinc"),
             copper = v("copper"), manganese = v("manganese"),
-            selenium = v("selenium"), iodine = v("iodine"),
-            chromium = v("chromium")
+            selenium = v("selenium"), iodine = v("iodine")
         )
 
         // Cache it
@@ -1331,8 +1401,7 @@ Return ONLY a JSON object with these fields:
                 copper = n.copper100g ?: 0.0,
                 manganese = n.manganese100g ?: 0.0,
                 selenium = n.selenium100g ?: 0.0,
-                iodine = n.iodine100g ?: 0.0,
-                chromium = n.chromium100g ?: 0.0
+                iodine = n.iodine100g ?: 0.0
             )
             Pair(name, per100g)
         } catch (e: Exception) {
@@ -1504,7 +1573,7 @@ IMPORTANT UNITS — use these EXACT units:
 - calcium, iron, magnesium, phosphorus, potassium, sodium, zinc: mg
 - copper: mg
 - manganese: mg
-- selenium, iodine, chromium: mcg
+- selenium, iodine: mcg
 
 Return ONLY a JSON object with numeric values PER SERVING. If a nutrient is not present in this supplement, use 0.
 Example for "Vitamin K2 100mcg": {"vitamin_k": 100, "calories": 0, ...}
@@ -1551,8 +1620,7 @@ JSON:
                 copper = v("copper"),
                 manganese = v("manganese"),
                 selenium = v("selenium"),
-                iodine = v("iodine"),
-                chromium = v("chromium")
+                iodine = v("iodine")
             )
         } catch (e: Exception) {
             Log.w("Repository", "Failed to parse supplement AI response: ${e.message}")
@@ -1579,7 +1647,7 @@ JSON:
                 if (!httpResponse.isSuccessful) {
                     val errorBody = httpResponse.errorBody()?.string() ?: "No error body"
                     Log.w("Repository", "Model $model HTTP $httpCode: $errorBody")
-                    if (httpCode in listOf(429, 502, 503, 524)) {
+                    if (httpCode in listOf(404, 429, 502, 503, 524)) {
                         lastError = Exception("$model: HTTP $httpCode")
                         continue // try next model immediately
                     }

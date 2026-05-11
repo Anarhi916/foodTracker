@@ -52,6 +52,5 @@ data class UsdaFoodNutrient(
         const val MANGANESE = 1101  // mg
         const val SELENIUM = 1103   // mcg
         const val IODINE = 1100     // mcg
-        const val CHROMIUM = 1096   // mcg
     }
 }

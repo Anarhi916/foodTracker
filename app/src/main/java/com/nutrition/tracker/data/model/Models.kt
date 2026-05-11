@@ -31,8 +31,7 @@ data class NutrientData(
     val copper: Double = 0.0,
     val manganese: Double = 0.0,
     val selenium: Double = 0.0,
-    val iodine: Double = 0.0,
-    val chromium: Double = 0.0
+    val iodine: Double = 0.0
 ) {
     operator fun plus(other: NutrientData) = NutrientData(
         calories = calories + other.calories,
@@ -63,8 +62,7 @@ data class NutrientData(
         copper = copper + other.copper,
         manganese = manganese + other.manganese,
         selenium = selenium + other.selenium,
-        iodine = iodine + other.iodine,
-        chromium = chromium + other.chromium
+        iodine = iodine + other.iodine
     )
 
     operator fun times(factor: Double) = NutrientData(
@@ -96,8 +94,7 @@ data class NutrientData(
         copper = copper * factor,
         manganese = manganese * factor,
         selenium = selenium * factor,
-        iodine = iodine * factor,
-        chromium = chromium * factor
+        iodine = iodine * factor
     )
 
     fun macrosList(): List<Pair<String, Double>> = listOf(
@@ -135,8 +132,7 @@ data class NutrientData(
         "Медь (мг)" to copper,
         "Марганец (мг)" to manganese,
         "Селен (мкг)" to selenium,
-        "Йод (мкг)" to iodine,
-        "Хром (мкг)" to chromium
+        "Йод (мкг)" to iodine
     )
 
     fun getByKey(key: String): Double = when (key) {
@@ -169,7 +165,6 @@ data class NutrientData(
         "manganese" -> manganese
         "selenium" -> selenium
         "iodine" -> iodine
-        "chromium" -> chromium
         else -> 0.0
     }
 
@@ -203,7 +198,6 @@ data class NutrientData(
         "manganese" -> copy(manganese = value)
         "selenium" -> copy(selenium = value)
         "iodine" -> copy(iodine = value)
-        "chromium" -> copy(chromium = value)
         else -> this
     }
 
@@ -236,8 +230,7 @@ data class NutrientData(
         Triple("copper", "Медь (мг)", copper),
         Triple("manganese", "Марганец (мг)", manganese),
         Triple("selenium", "Селен (мкг)", selenium),
-        Triple("iodine", "Йод (мкг)", iodine),
-        Triple("chromium", "Хром (мкг)", chromium)
+        Triple("iodine", "Йод (мкг)", iodine)
     )
 }
 

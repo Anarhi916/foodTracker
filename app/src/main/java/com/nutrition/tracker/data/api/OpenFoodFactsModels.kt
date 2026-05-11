@@ -54,7 +54,6 @@ data class OFFNutriments(
     @SerializedName("manganese_100g") val manganese100g: Double? = null,
     @SerializedName("selenium_100g") val selenium100g: Double? = null,
     @SerializedName("iodine_100g") val iodine100g: Double? = null,
-    @SerializedName("chromium_100g") val chromium100g: Double? = null,
     // Per-serving values (used for supplements/BADs)
     @SerializedName("energy-kcal_serving") val energyKcalServing: Double? = null,
     @SerializedName("proteins_serving") val proteinsServing: Double? = null,
@@ -84,6 +83,5 @@ data class OFFNutriments(
     @SerializedName("copper_serving") val copperServing: Double? = null,
     @SerializedName("manganese_serving") val manganeseServing: Double? = null,
     @SerializedName("selenium_serving") val seleniumServing: Double? = null,
-    @SerializedName("iodine_serving") val iodineServing: Double? = null,
-    @SerializedName("chromium_serving") val chromiumServing: Double? = null
+    @SerializedName("iodine_serving") val iodineServing: Double? = null
 )
