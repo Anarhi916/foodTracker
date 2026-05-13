@@ -25,25 +25,24 @@ class NutritionRepository(
     private val dateFormatter = DateTimeFormatter.ISO_LOCAL_DATE
     private val apiKey = BuildConfig.OPENROUTER_API_KEY
 
-    // Fallback text models (tried in order if rate-limited)
-    // Sorted by: reliability, speed, JSON quality from real testing
+    // Text models (tried in order if rate-limited)
+    // Primary: Gemini 2.5 Flash Lite (paid, fast, reliable JSON, $0.10/$0.40 per 1M tokens)
+    // Fallback: free models in case of issues
     private val textModels = listOf(
-        "openai/gpt-oss-120b:free",                      // fast, reliable, good JSON
-        "nvidia/nemotron-3-super-120b-a12b:free",        // reliable, thinking model
-        "arcee-ai/trinity-large-preview:free",           // fast, non-thinking, good JSON
-        "nvidia/nemotron-3-nano-30b-a3b:free",           // fast thinking model
-        "openai/gpt-oss-20b:free",                       // reliable backup
-        "google/gemma-4-31b-it:free",                    // good but often 429
-        "z-ai/glm-4.5-air:free",                         // slower but works
-        "minimax/minimax-m2.5:free"                      // very slow (>60s), last resort
+        "google/gemini-2.5-flash-lite",                  // primary: fast, cheap, reliable JSON
+        "openai/gpt-oss-120b:free",                      // fallback: fast, reliable, good JSON
+        "nvidia/nemotron-3-super-120b-a12b:free",        // fallback: reliable, thinking model
+        "arcee-ai/trinity-large-preview:free",           // fallback: fast, non-thinking, good JSON
+        "nvidia/nemotron-3-nano-30b-a3b:free"            // fallback: fast thinking model
     )
 
-    // Fallback vision models (support image_url input)
+    // Vision models (support image_url input)
+    // Primary: Gemini 2.5 Flash Lite (paid, supports vision/multimodal)
     private val visionModels = listOf(
-        "google/gemma-4-31b-it:free",
-        "google/gemma-4-26b-a4b-it:free",
-        "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
-        "nvidia/nemotron-nano-12b-v2-vl:free"            // thinking model, needs more tokens
+        "google/gemini-2.5-flash-lite",                  // primary: fast, cheap, supports vision
+        "google/gemma-4-31b-it:free",                    // fallback
+        "google/gemma-4-26b-a4b-it:free",               // fallback
+        "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
     )
 
     // Paid model for initial daily norms calculation only.
@@ -347,8 +346,12 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
 
 Примеры правильного перевода:
 - "куриная отбивная" / "куряча відбивна" → "chicken breast cutlet"
-- "гречневая каша" / "гречана каша" → "buckwheat porridge"  
+- "гречневая каша" / "гречана каша" → "buckwheat porridge"
+- "ячневая каша вареная" / "ячнева каша варена" / "ячневая каша варенная" → "barley porridge cooked"
+- "овсяная каша" / "вівсяна каша" → "oatmeal cooked"
 - "творог нежирный" / "сир кисломолочний нежирний" → "low-fat cottage cheese"
+
+ВАЖНО: слова "вареная"/"варена"/"варенная"/"варёная"/"отварная" ВСЕ означают "cooked" — всегда добавляй "cooked" в перевод!
 - "борщ" → "borscht"
 - "вареники с картошкой" / "вареники з картоплею" → "potato pierogi"
 - "вареники с творогом" / "вареники з сиром" → "cottage cheese pierogi"
@@ -453,11 +456,22 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
                 }
 
                 val usdaResult = usdaApi.searchFoods(query = negationCleaned.ifBlank { item.foodNameEn })
-                // Relevance filter: USDA description must contain the LONGEST query word (main food)
+                // Relevance filter: USDA description must contain the main food word
                 // This prevents "lightly salted salmon" matching "Almonds, lightly salted"
                 val queryWords = negationCleaned.lowercase().split("\\s+".toRegex())
                     .filter { it.length >= 3 }
-                val mainWord = queryWords.maxByOrNull { it.length } // longest word is most specific
+                val cookingTerms = setOf(
+                    "porridge", "cooked", "boiled", "fried", "baked", "grilled",
+                    "steamed", "roasted", "stewed", "casserole", "braised", "raw",
+                    "fresh", "dried", "frozen", "canned", "smoked", "pickled",
+                    "mashed", "sliced", "chopped", "minced", "ground", "whole",
+                    "hot", "cold", "warm", "thick", "thin", "light", "heavy",
+                    "homemade", "instant", "regular", "plain", "with", "without"
+                )
+                val mainWord = queryWords
+                    .filter { it !in cookingTerms }
+                    .maxByOrNull { it.length }
+                    ?: queryWords.maxByOrNull { it.length } // fallback if all words are cooking terms
                 val secondaryWords = queryWords.filter { it != mainWord }
                 fun isRelevant(description: String?): Boolean {
                     if (description == null || mainWord == null) return false
@@ -488,9 +502,13 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
                     // Word match count bonus (each matching word = +30)
                     val wordMatchBonus = queryWords.count { desc.contains(it) } * 30
                     // Prefer generic/plain entries over recipes/mixed dishes
+                    // If query implies cooking (porridge, boiled, cooked), prefer cooked entries
+                    val queryImpliesCooked = queryWords.any { it in setOf("porridge", "cooked", "boiled", "steamed", "stewed", "braised", "baked", "fried", "grilled", "roasted") }
                     val plainBonus = when {
                         desc.contains(", nfs") -> 25       // "Not Further Specified" = generic average
-                        desc.contains("raw") -> 20         // raw = plain product
+                        queryImpliesCooked && desc.contains("cooked") -> 30  // prefer cooked when query implies it
+                        queryImpliesCooked && desc.contains("raw") -> -20    // penalize raw when query implies cooked
+                        !queryImpliesCooked && desc.contains("raw") -> 20    // raw = plain product (only when not cooking)
                         desc.startsWith("fish,") || desc.startsWith("fish ") -> 15 // USDA standard fish entry
                         desc.contains("salted") || desc.contains("smoked") || desc.contains("canned") -> 10
                         else -> 0
