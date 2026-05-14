@@ -1173,10 +1173,20 @@ Return ONLY a JSON object:
 
         val messages = listOf(OpenRouterMessage(role = "user", content = contentParts))
         val text = callOpenRouterWithRetry(messages = messages, models = normsModels)
-        val json = extractJsonContent(text)
+        var json = extractJsonContent(text)
+        // Fallback: if extractJsonContent didn't find valid JSON, try extracting from raw text
+        if (!json.trimStart().startsWith("{")) {
+            val rawStart = text.indexOf('{')
+            val rawEnd = text.lastIndexOf('}')
+            if (rawStart >= 0 && rawEnd > rawStart) {
+                json = text.substring(rawStart, rawEnd + 1)
+            }
+        }
         Log.d("Repository", "Paid photo full analysis response: $json")
 
-        val map = gson.fromJson(json, Map::class.java) as? Map<String, Any>
+        val reader = JsonReader(java.io.StringReader(json))
+        reader.isLenient = true
+        val map = gson.fromJson<Map<String, Any>>(reader, Map::class.java) as? Map<String, Any>
             ?: throw Exception("Не удалось распознать блюдо по фото")
 
         fun v(key: String): Double {
