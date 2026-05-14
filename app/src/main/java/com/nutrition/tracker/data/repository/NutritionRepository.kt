@@ -168,9 +168,18 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
     // --- Food Cache ---
     fun getAllCachedFoods() = db.foodCacheDao().getAll()
 
-    suspend fun deleteCachedFood(entry: FoodCacheEntity) = db.foodCacheDao().delete(entry)
+    suspend fun deleteCachedFood(entry: FoodCacheEntity) {
+        db.foodCacheDao().delete(entry)
+        // Also delete hidden barcode: and supplement: entries that reference the same product
+        if (!entry.keyOriginal.startsWith("barcode:") && !entry.keyOriginal.startsWith("supplement:")) {
+            db.foodCacheDao().deleteBarcodeEntriesByKeyEn(entry.keyEn)
+            db.foodCacheDao().deleteSupplementEntriesByKeyEn(entry.keyEn)
+        }
+    }
 
     suspend fun deleteAllCachedFoods() = db.foodCacheDao().deleteAll()
+
+    suspend fun deleteAllBarcodeAndSupplementEntries() = db.foodCacheDao().deleteAllBarcodeAndSupplementEntries()
 
     suspend fun updateCachedFood(id: Long, nutrients: NutrientData) {
         db.foodCacheDao().updateNutrients(id, gson.toJson(nutrients))

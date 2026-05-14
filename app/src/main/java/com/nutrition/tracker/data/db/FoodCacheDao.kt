@@ -20,6 +20,12 @@ interface FoodCacheDao {
     @Delete
     suspend fun delete(entry: FoodCacheEntity)
 
+    @Query("DELETE FROM food_cache WHERE keyOriginal LIKE 'barcode:%' AND keyEn = :keyEn")
+    suspend fun deleteBarcodeEntriesByKeyEn(keyEn: String)
+
+    @Query("DELETE FROM food_cache WHERE keyOriginal LIKE 'supplement:%' AND keyEn = :keyEn")
+    suspend fun deleteSupplementEntriesByKeyEn(keyEn: String)
+
     @Query("UPDATE food_cache SET nutrientsPer100gJson = :json WHERE id = :id")
     suspend fun updateNutrients(id: Long, json: String)
 
@@ -28,4 +34,11 @@ interface FoodCacheDao {
 
     @Query("DELETE FROM food_cache")
     suspend fun deleteAll()
+
+    @Query("""
+        DELETE FROM food_cache WHERE keyEn IN (
+            SELECT keyEn FROM food_cache WHERE keyOriginal LIKE 'barcode:%' OR keyOriginal LIKE 'supplement:%'
+        )
+    """)
+    suspend fun deleteAllBarcodeAndSupplementEntries()
 }

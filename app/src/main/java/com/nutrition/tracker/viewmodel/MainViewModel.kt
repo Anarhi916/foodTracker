@@ -519,6 +519,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { repo.deleteAllCachedFoods() }
     }
 
+    fun deleteAllBarcodeAndSupplementEntries() {
+        viewModelScope.launch { repo.deleteAllBarcodeAndSupplementEntries() }
+    }
+
     fun updateCachedFood(entry: FoodCacheEntity, nutrients: NutrientData) {
         viewModelScope.launch { repo.updateCachedFood(entry.id, nutrients) }
     }

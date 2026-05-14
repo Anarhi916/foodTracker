@@ -127,15 +127,21 @@ fun SavedProductsScreen(
         AlertDialog(
             onDismissRequest = { showClearAllConfirm = false },
             title = { Text("Очистить кеш?") },
-            text = { Text("Удалить все ${cachedFoods.size} сохранённых продуктов? Это действие нельзя отменить.") },
+            text = { Text("Выберите что удалить:") },
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.deleteAllCachedFoods()
                     showClearAllConfirm = false
-                }) { Text("Очистить", color = MaterialTheme.colorScheme.error) }
+                }) { Text("Удалить всё", color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = {
-                TextButton(onClick = { showClearAllConfirm = false }) { Text("Отмена") }
+                Row {
+                    TextButton(onClick = {
+                        viewModel.deleteAllBarcodeAndSupplementEntries()
+                        showClearAllConfirm = false
+                    }) { Text("Только штрих-коды") }
+                    TextButton(onClick = { showClearAllConfirm = false }) { Text("Отмена") }
+                }
             }
         )
     }
