@@ -25,29 +25,24 @@ class NutritionRepository(
     private val dateFormatter = DateTimeFormatter.ISO_LOCAL_DATE
     private val apiKey = BuildConfig.OPENROUTER_API_KEY
 
-    // Text models (tried in order if rate-limited)
-    // Primary: Gemini 2.5 Flash Lite (paid, fast, reliable JSON, $0.10/$0.40 per 1M tokens)
-    // Fallback: free models in case of issues
+    // Text model (paid, fast, reliable JSON, $0.10/$0.40 per 1M tokens)
     private val textModels = listOf(
-        "google/gemini-2.5-flash-lite",                  // primary: fast, cheap, reliable JSON
-        "openai/gpt-oss-120b:free",                      // fallback: fast, reliable, good JSON
-        "nvidia/nemotron-3-super-120b-a12b:free",        // fallback: reliable, thinking model
-        "arcee-ai/trinity-large-preview:free",           // fallback: fast, non-thinking, good JSON
-        "nvidia/nemotron-3-nano-30b-a3b:free"            // fallback: fast thinking model
+        "google/gemini-2.5-flash-lite"
     )
 
-    // Vision models (support image_url input)
-    // Primary: Gemini 2.5 Flash Lite (paid, supports vision/multimodal)
+    // Vision model (paid, supports image_url input)
     private val visionModels = listOf(
-        "google/gemini-2.5-flash-lite",                  // primary: fast, cheap, supports vision
-        "google/gemma-4-31b-it:free",                    // fallback
-        "google/gemma-4-26b-a4b-it:free",               // fallback
-        "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
+        "google/gemini-2.5-flash-lite"
     )
 
-    // Paid model for initial daily norms calculation only.
-    private val normsModels = listOf(
+    // Paid model for photo recognition ($0.30/$2.50 per 1M tokens)
+    private val photoModels = listOf(
         "google/gemini-2.5-flash"
+    )
+
+    // Paid model for daily norms calculation (needs high reasoning quality)
+    private val normsModels = listOf(
+        "google/gemini-2.5-pro-preview"
     )
 
     fun todayDate(): String = LocalDate.now().format(dateFormatter)
@@ -241,6 +236,14 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
                 nutrientsPer100gJson = gson.toJson(nutrientsPer100g)
             )
         )
+    }
+
+    suspend fun cacheFoodData(name: String, nameEn: String, per100g: NutrientData) {
+        try {
+            saveToCache(name, nameEn, per100g)
+        } catch (e: Exception) {
+            Log.w("Repository", "Failed to cache food: ${e.message}")
+        }
     }
 
     /**
@@ -1172,7 +1175,7 @@ Return ONLY a JSON object:
         )
 
         val messages = listOf(OpenRouterMessage(role = "user", content = contentParts))
-        val text = callOpenRouterWithRetry(messages = messages, models = normsModels)
+        val text = callOpenRouterWithRetry(messages = messages, models = photoModels)
         var json = extractJsonContent(text)
         // Fallback: if extractJsonContent didn't find valid JSON, try extracting from raw text
         if (!json.trimStart().startsWith("{")) {
@@ -1218,14 +1221,6 @@ Return ONLY a JSON object:
             copper = v("copper"), manganese = v("manganese"),
             selenium = v("selenium"), iodine = v("iodine")
         )
-
-        // Cache it
-        try {
-            saveToCache(foodName, nameEn, per100g)
-            Log.d("Repository", "Cached paid photo dish '$foodName' / '$nameEn'")
-        } catch (e: Exception) {
-            Log.w("Repository", "Failed to cache paid photo dish: ${e.message}")
-        }
 
         return FoodAnalysisResult(
             foodName = foodName,
@@ -1665,15 +1660,18 @@ JSON:
         }
     }
 
-    // --- OpenRouter helpers with retry/fallback ---
+    // --- OpenRouter helpers with retry ---
     private suspend fun callOpenRouterWithRetry(
         messages: List<OpenRouterMessage>,
         models: List<String>
     ): String {
+        val model = models.first()
         var lastError: Exception? = null
-        for (model in models) {
+        val maxRetries = 5
+
+        for (attempt in 1..maxRetries) {
             try {
-                Log.d("Repository", "Trying model: $model")
+                Log.d("Repository", "Trying model: $model (attempt $attempt/$maxRetries)")
                 val request = OpenRouterRequest(
                     model = model,
                     messages = messages
@@ -1684,56 +1682,63 @@ JSON:
                 if (!httpResponse.isSuccessful) {
                     val errorBody = httpResponse.errorBody()?.string() ?: "No error body"
                     Log.w("Repository", "Model $model HTTP $httpCode: $errorBody")
-                    if (httpCode in listOf(404, 429, 502, 503, 524)) {
-                        lastError = Exception("$model: HTTP $httpCode")
-                        continue // try next model immediately
+                    lastError = Exception("HTTP $httpCode: $errorBody")
+                    if (attempt < maxRetries) {
+                        kotlinx.coroutines.delay(1000)
+                        continue
                     }
-                    throw Exception("API ошибка HTTP $httpCode: $errorBody")
+                    throw lastError!!
                 }
 
                 val response = httpResponse.body()
                 if (response == null) {
                     Log.w("Repository", "Model $model: null response body")
-                    lastError = Exception("$model: пустой ответ")
-                    continue
+                    lastError = Exception("Пустой ответ от сервера")
+                    if (attempt < maxRetries) {
+                        kotlinx.coroutines.delay(1000)
+                        continue
+                    }
+                    throw lastError!!
                 }
 
                 if (response.error != null) {
-                    val code = response.error.code
-                    Log.w("Repository", "Model $model error $code: ${response.error.message}")
-                    if (code in listOf(429, 502, 503, 524)) {
-                        lastError = Exception("$model: ${response.error.message}")
-                        continue // try next model immediately
+                    Log.w("Repository", "Model $model error ${response.error.code}: ${response.error.message}")
+                    lastError = Exception("API: ${response.error.message}")
+                    if (attempt < maxRetries) {
+                        kotlinx.coroutines.delay(1000)
+                        continue
                     }
-                    throw Exception("API ошибка: ${response.error.message}")
+                    throw lastError!!
                 }
 
                 val msg = response.choices?.firstOrNull()?.message
                 val text = msg?.content
                 if (text.isNullOrBlank()) {
-                    // Thinking models may put all output in reasoning with content=null
-                    // when max_tokens is too low. Skip to next model.
                     val reasoning = msg?.reasoning
                     if (!reasoning.isNullOrBlank()) {
-                        Log.w("Repository", "Model $model: content empty, only reasoning (${reasoning.length} chars). Skipping.")
+                        Log.w("Repository", "Model $model: content empty, only reasoning (${reasoning.length} chars).")
                     } else {
-                        Log.w("Repository", "Model $model returned empty content, trying next")
+                        Log.w("Repository", "Model $model returned empty content")
                     }
-                    lastError = Exception("$model: пустой ответ")
-                    continue
+                    lastError = Exception("Пустой ответ от модели")
+                    if (attempt < maxRetries) {
+                        kotlinx.coroutines.delay(1000)
+                        continue
+                    }
+                    throw lastError!!
                 }
-                Log.d("Repository", "Success with model: $model")
+                Log.d("Repository", "Success with model: $model (attempt $attempt)")
                 return text
             } catch (e: Exception) {
-                if (lastError == null) lastError = e
-                val msg = e.message ?: ""
-                if (msg.contains("429") || msg.contains("503") || msg.contains("502") || msg.contains("524")) {
-                    continue // try next model immediately
+                lastError = e
+                Log.w("Repository", "Attempt $attempt/$maxRetries failed: ${e.message}")
+                if (attempt < maxRetries) {
+                    kotlinx.coroutines.delay(1000)
+                    continue
                 }
-                throw e
             }
         }
-        throw lastError ?: Exception("Все модели недоступны. Попробуйте позже.")
+        throw lastError ?: Exception("Сервер недоступен после $maxRetries попыток. Проверьте интернет.")
     }
 
     private suspend fun callOpenRouterText(prompt: String): NutrientData {

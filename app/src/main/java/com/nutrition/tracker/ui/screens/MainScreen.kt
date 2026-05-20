@@ -97,30 +97,7 @@ fun MainScreen(
         )
     }
 
-    // Photo model choice dialog
-    if (uiState.showPhotoModelChoiceDialog) {
-        AlertDialog(
-            onDismissRequest = { viewModel.dismissPhotoModelChoice() },
-            title = { Text("Распознавание фото") },
-            text = { Text("Выберите модель для распознавания продуктов по фото.\n\nПлатная модель (Gemini Pro) даёт более точные результаты.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    viewModel.selectPhotoModel(usePaid = true)
-                    onNavigateToCamera()
-                }) {
-                    Text("💎 Платная")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    viewModel.selectPhotoModel(usePaid = false)
-                    onNavigateToCamera()
-                }) {
-                    Text("Бесплатная")
-                }
-            }
-        )
-    }
+    // Photo model choice dialog removed — always use paid model
 
     // Error snackbar
     val snackbarHostState = remember { SnackbarHostState() }
@@ -235,7 +212,7 @@ fun MainScreen(
                         onFoodInputChange = { viewModel.updateFoodInput(it) },
                         onAnalyze = { viewModel.analyzeFood() },
                         onScanBarcode = onNavigateToScanner,
-                        onTakePhoto = { viewModel.showPhotoModelChoice() },
+                        onTakePhoto = { onNavigateToCamera() },
                         onScanSupplement = onNavigateToSupplementScanner,
                         isLoading = uiState.isLoading,
                         cachedFoods = cachedFoods,

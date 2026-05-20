@@ -33,6 +33,7 @@ data class MainUiState(
     // Photo edit dialog
     val showPhotoEditDialog: Boolean = false,
     val photoFoodName: String = "",
+    val photoOriginalFoodName: String = "",
     val photoWeight: String = "200",
     // Supplement (BAD) dialog
     val showSupplementDialog: Boolean = false,
@@ -40,10 +41,7 @@ data class MainUiState(
     val supplementNutrientsPerServing: NutrientData? = null,
     val supplementServingSize: String = "",
     val supplementServings: String = "1",
-    // Photo model choice dialog
-    val showPhotoModelChoiceDialog: Boolean = false,
-    val usePaidPhotoModel: Boolean = false,
-    // Paid photo: nutrients per 100g for local recalculation
+    // Photo: nutrients per 100g for local recalculation
     val photoNutrientsPer100g: NutrientData? = null,
     val photoFoodNameEn: String = ""
 )
@@ -342,53 +340,33 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
-    // --- Photo model choice ---
-    fun showPhotoModelChoice() {
-        _uiState.value = _uiState.value.copy(showPhotoModelChoiceDialog = true)
-    }
-
-    fun dismissPhotoModelChoice() {
-        _uiState.value = _uiState.value.copy(showPhotoModelChoiceDialog = false)
-    }
-
-    fun selectPhotoModel(usePaid: Boolean) {
-        _uiState.value = _uiState.value.copy(
-            showPhotoModelChoiceDialog = false,
-            usePaidPhotoModel = usePaid
-        )
-    }
-
     // --- Photo ---
     fun analyzePhoto(imageBytes: ByteArray) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             try {
-                val usePaid = _uiState.value.usePaidPhotoModel
-                if (usePaid) {
-                    // Paid: single call — identify + nutrients per 100g in one prompt
-                    val result = repo.identifyAndAnalyzeFoodFromPhoto(imageBytes)
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        showPhotoEditDialog = true,
-                        photoFoodName = result.foodName,
-                        photoFoodNameEn = result.foodNameEn,
-                        photoWeight = result.weightGrams.toInt().toString(),
-                        photoNutrientsPer100g = result.nutrients
-                    )
-                } else {
-                    // Free: Step 1 — identify food name + weight only
-                    val (name, weight) = repo.identifyFoodFromPhoto(imageBytes)
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        showPhotoEditDialog = true,
-                        photoFoodName = name,
-                        photoWeight = weight.toInt().toString()
-                    )
-                }
-            } catch (e: Exception) {
+                val result = repo.identifyAndAnalyzeFoodFromPhoto(imageBytes)
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    error = "Ошибка распознавания фото: ${e.message}"
+                    showPhotoEditDialog = true,
+                    photoFoodName = result.foodName,
+                    photoOriginalFoodName = result.foodName,
+                    photoFoodNameEn = result.foodNameEn,
+                    photoWeight = result.weightGrams.toInt().toString(),
+                    photoNutrientsPer100g = result.nutrients
+                )
+            } catch (e: Exception) {
+                val userMessage = when {
+                    e.message?.contains("Unable to resolve host") == true ||
+                    e.message?.contains("No address associated") == true ->
+                        "Нет подключения к интернету. Проверьте сеть и попробуйте снова."
+                    e.message?.contains("timeout") == true ->
+                        "Превышено время ожидания. Проверьте интернет и попробуйте снова."
+                    else -> "Ошибка распознавания фото: ${e.message}"
+                }
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = userMessage
                 )
             }
         }
@@ -414,9 +392,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         val weightGrams = weight.toDoubleOrNull() ?: 200.0
         val per100g = state.photoNutrientsPer100g
+        val nameChanged = foodDesc != state.photoOriginalFoodName.trim()
 
-        if (per100g != null) {
-            // Paid flow: nutrients already obtained, just recalculate for weight
+        if (per100g != null && !nameChanged) {
+            // Name not changed: use already obtained nutrients, just recalculate for weight
             val factor = weightGrams / 100.0
             val result = FoodAnalysisResult(
                 foodName = foodDesc,
@@ -425,6 +404,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 nutrients = per100g * factor,
                 fromCache = false
             )
+            // Cache only now (after user confirmed the name)
+            viewModelScope.launch {
+                repo.cacheFoodData(foodDesc, state.photoFoodNameEn, per100g)
+            }
             _uiState.value = _uiState.value.copy(
                 showPhotoEditDialog = false,
                 pendingFood = result,
@@ -432,12 +415,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 pendingFoodSource = "photo",
                 showConfirmDialog = true,
                 photoNutrientsPer100g = null,
-                photoFoodNameEn = ""
+                photoFoodNameEn = "",
+                photoOriginalFoodName = ""
             )
             return
         }
 
-        // Free flow: need second API call for nutrients
+        // Name was changed (or no cached nutrients): request new nutrients from AI
         _uiState.value = _uiState.value.copy(
             showPhotoEditDialog = false,
             isLoading = true,
@@ -446,14 +430,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             try {
-                // Photo analysis: treat as a single dish, don't split into ingredients
                 val result = repo.analyzeSingleDish(foodDesc, weightGrams)
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     pendingFood = result,
                     pendingFoodWeight = result.weightGrams,
                     pendingFoodSource = "photo",
-                    showConfirmDialog = true
+                    showConfirmDialog = true,
+                    photoNutrientsPer100g = null,
+                    photoFoodNameEn = "",
+                    photoOriginalFoodName = ""
                 )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
