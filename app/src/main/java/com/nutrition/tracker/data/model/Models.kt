@@ -6,6 +6,10 @@ data class NutrientData(
     val calories: Double = 0.0,
     val protein: Double = 0.0,
     val fat: Double = 0.0,
+    @SerializedName("saturated_fat") val saturatedFat: Double = 0.0,
+    @SerializedName("monounsaturated_fat") val monounsaturatedFat: Double = 0.0,
+    @SerializedName("polyunsaturated_fat") val polyunsaturatedFat: Double = 0.0,
+    val cholesterol: Double = 0.0,
     val carbs: Double = 0.0,
     val fiber: Double = 0.0,
     @SerializedName("vitamin_a") val vitaminA: Double = 0.0,
@@ -37,6 +41,10 @@ data class NutrientData(
         calories = calories + other.calories,
         protein = protein + other.protein,
         fat = fat + other.fat,
+        saturatedFat = saturatedFat + other.saturatedFat,
+        monounsaturatedFat = monounsaturatedFat + other.monounsaturatedFat,
+        polyunsaturatedFat = polyunsaturatedFat + other.polyunsaturatedFat,
+        cholesterol = cholesterol + other.cholesterol,
         carbs = carbs + other.carbs,
         fiber = fiber + other.fiber,
         vitaminA = vitaminA + other.vitaminA,
@@ -69,6 +77,10 @@ data class NutrientData(
         calories = calories * factor,
         protein = protein * factor,
         fat = fat * factor,
+        saturatedFat = saturatedFat * factor,
+        monounsaturatedFat = monounsaturatedFat * factor,
+        polyunsaturatedFat = polyunsaturatedFat * factor,
+        cholesterol = cholesterol * factor,
         carbs = carbs * factor,
         fiber = fiber * factor,
         vitaminA = vitaminA * factor,
@@ -105,6 +117,13 @@ data class NutrientData(
         "Клетчатка (г)" to fiber
     )
 
+    fun fatDetailsList(): List<Pair<String, Double>> = listOf(
+        "Насыщенные жиры (г)" to saturatedFat,
+        "Мононенасыщенные жиры (г)" to monounsaturatedFat,
+        "Полиненасыщенные жиры (г)" to polyunsaturatedFat,
+        "Холестерин (мг)" to cholesterol
+    )
+
     fun vitaminsList(): List<Pair<String, Double>> = listOf(
         "Витамин A (мкг)" to vitaminA,
         "Витамин B1 (мг)" to vitaminB1,
@@ -139,6 +158,10 @@ data class NutrientData(
         "calories" -> calories
         "protein" -> protein
         "fat" -> fat
+        "saturatedFat" -> saturatedFat
+        "monounsaturatedFat" -> monounsaturatedFat
+        "polyunsaturatedFat" -> polyunsaturatedFat
+        "cholesterol" -> cholesterol
         "carbs" -> carbs
         "fiber" -> fiber
         "vitaminA" -> vitaminA
@@ -172,6 +195,10 @@ data class NutrientData(
         "calories" -> copy(calories = value)
         "protein" -> copy(protein = value)
         "fat" -> copy(fat = value)
+        "saturatedFat" -> copy(saturatedFat = value)
+        "monounsaturatedFat" -> copy(monounsaturatedFat = value)
+        "polyunsaturatedFat" -> copy(polyunsaturatedFat = value)
+        "cholesterol" -> copy(cholesterol = value)
         "carbs" -> copy(carbs = value)
         "fiber" -> copy(fiber = value)
         "vitaminA" -> copy(vitaminA = value)
@@ -205,6 +232,10 @@ data class NutrientData(
         Triple("calories", "Калории (ккал)", calories),
         Triple("protein", "Белки (г)", protein),
         Triple("fat", "Жиры (г)", fat),
+        Triple("saturatedFat", "Насыщенные жиры (г)", saturatedFat),
+        Triple("monounsaturatedFat", "Мононенасыщенные жиры (г)", monounsaturatedFat),
+        Triple("polyunsaturatedFat", "Полиненасыщенные жиры (г)", polyunsaturatedFat),
+        Triple("cholesterol", "Холестерин (мг)", cholesterol),
         Triple("carbs", "Углеводы (г)", carbs),
         Triple("fiber", "Клетчатка (г)", fiber),
         Triple("vitaminA", "Витамин A (мкг)", vitaminA),

@@ -93,7 +93,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init {
-        // No longer cleaning up old entries — keep full history for statistics
+        // Auto-recalculate norms if fat details are missing (legacy norms before fat breakdown update)
+        viewModelScope.launch {
+            try {
+                val norms = repo.getDailyNormsSync() ?: return@launch
+                // If norms have fat > 0 but all fat details are zero → need recalculation
+                if (norms.fat > 0 && norms.saturatedFat == 0.0 && norms.monounsaturatedFat == 0.0
+                    && norms.polyunsaturatedFat == 0.0 && norms.cholesterol == 0.0) {
+                    val profile = repo.getUserProfileSync() ?: return@launch
+                    android.util.Log.d("MainViewModel", "Recalculating norms to include fat details")
+                    repo.calculateAndSaveNorms(
+                        profile.gender, profile.age, profile.weightKg, profile.heightCm, profile.goalsText
+                    )
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("MainViewModel", "Failed to auto-recalculate norms: ${e.message}")
+            }
+        }
     }
 
     fun updateFoodInput(text: String) {
@@ -529,16 +545,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun addCachedFoodToToday(entry: FoodCacheEntity, weightGrams: Double) {
         viewModelScope.launch {
-            val per100g = repo.parseNutrients(entry.nutrientsPer100gJson)
-            val factor = weightGrams / 100.0
-            val nutrients = per100g * factor
-            repo.addFoodEntry(
-                foodName = entry.keyOriginal,
-                weightGrams = weightGrams,
-                nutrients = nutrients,
-                source = "manual",
-                fromCache = true
-            )
+            _uiState.value = _uiState.value.copy(isLoading = true)
+            try {
+                val per100g = repo.enrichFatDetailsForCachedEntry(entry)
+                val factor = weightGrams / 100.0
+                val nutrients = per100g * factor
+                repo.addFoodEntry(
+                    foodName = entry.keyOriginal,
+                    weightGrams = weightGrams,
+                    nutrients = nutrients,
+                    source = "manual",
+                    fromCache = true
+                )
+            } finally {
+                _uiState.value = _uiState.value.copy(isLoading = false)
+            }
         }
     }
 }

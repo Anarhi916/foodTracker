@@ -43,6 +43,14 @@ fun FoodConfirmationDialog(
                 NutrientRow("Углеводы", "%.1f г".format(nutrients.carbs))
                 NutrientRow("Клетчатка", "%.1f г".format(nutrients.fiber))
 
+                if (nutrients.fatDetailsList().any { it.second > 0 }) {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                    Text("Жиры (детально):", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    nutrients.fatDetailsList().filter { it.second > 0 }.forEach { (name, value) ->
+                        NutrientRow(name, "%.2f".format(value))
+                    }
+                }
+
                 if (nutrients.vitaminsList().any { it.second > 0 }) {
                     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
                     Text("Витамины:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)

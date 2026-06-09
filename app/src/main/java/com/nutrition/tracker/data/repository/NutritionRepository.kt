@@ -50,6 +50,8 @@ class NutritionRepository(
     // --- User Profile ---
     fun getUserProfile(): Flow<UserProfileEntity?> = db.userProfileDao().getProfile()
 
+    suspend fun getUserProfileSync(): UserProfileEntity? = db.userProfileDao().getProfileSync()
+
     suspend fun saveUserProfile(gender: String, age: Int, weight: Double, height: Double, goals: String) {
         db.userProfileDao().insert(
             UserProfileEntity(gender = gender, age = age, weightKg = weight, heightCm = height, goalsText = goals)
@@ -90,6 +92,10 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
   "calories": <number>,
   "protein": <grams>,
   "fat": <grams>,
+  "saturated_fat": <grams>,
+  "monounsaturated_fat": <grams>,
+  "polyunsaturated_fat": <grams>,
+  "cholesterol": <mg>,
   "carbs": <grams>,
   "fiber": <grams>,
   "vitamin_a": <mcg>,
@@ -123,7 +129,17 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
             messages = listOf(OpenRouterMessage(role = "user", content = prompt)),
             models = normsModels
         )
-        val nutrients = sanitizeNormUnits(parseNutrientData(normsText))
+        val nutrients = try {
+            sanitizeNormUnits(parseNutrientData(normsText))
+        } catch (e: Exception) {
+            Log.w("Repository", "Failed to parse norms response, retrying once. Text: ${normsText.take(200)}")
+            // Retry once if parsing fails (model returned malformed response)
+            val retryText = callOpenRouterWithRetry(
+                messages = listOf(OpenRouterMessage(role = "user", content = prompt)),
+                models = normsModels
+            )
+            sanitizeNormUnits(parseNutrientData(retryText))
+        }
         db.dailyNormsDao().deleteAll()
         db.dailyNormsDao().insert(DailyNormsEntity(nutrientsJson = gson.toJson(nutrients)))
         return nutrients
@@ -238,12 +254,117 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
         )
     }
 
+    /**
+     * Enriches fat details (saturated, mono, poly, cholesterol) for cached products
+     * that have total fat > 0 but all 4 detail fields are 0 (legacy data).
+     * Tries USDA first (free), falls back to AI.
+     * Returns enriched NutrientData and updates cache in-place.
+     */
+    private suspend fun enrichFatDetailsIfNeeded(
+        nutrients: NutrientData,
+        foodNameEn: String,
+        cacheEntityId: Long?
+    ): NutrientData {
+        // Only enrich if fat > 0 but ALL 4 detail fields are zero
+        if (nutrients.fat <= 0.0) return nutrients
+        if (nutrients.saturatedFat != 0.0 || nutrients.monounsaturatedFat != 0.0 ||
+            nutrients.polyunsaturatedFat != 0.0 || nutrients.cholesterol != 0.0) return nutrients
+
+        Log.d("Repository", "Enriching fat details for '$foodNameEn' (fat=${nutrients.fat})")
+
+        try {
+            // Try USDA first
+            val usdaResult = usdaApi.searchFoods(query = foodNameEn)
+            val food = usdaResult.foods?.firstOrNull { f ->
+                f.foodNutrients?.any { it.nutrientId == UsdaFoodNutrient.ENERGY && (it.value ?: 0.0) > 0 } == true
+                    && f.description?.lowercase()?.contains(
+                        foodNameEn.lowercase().split("\\s+".toRegex())
+                            .filter { it.length >= 3 }
+                            .maxByOrNull { it.length } ?: ""
+                    ) == true
+            }
+
+            if (food?.foodNutrients != null) {
+                val nMap = mutableMapOf<Int, Double>()
+                for (fn in food.foodNutrients) {
+                    if (fn.nutrientId != null && fn.value != null) nMap[fn.nutrientId] = fn.value
+                }
+                val satFat = nMap[UsdaFoodNutrient.SATURATED_FAT] ?: 0.0
+                val monoFat = nMap[UsdaFoodNutrient.MONOUNSATURATED_FAT] ?: 0.0
+                val polyFat = nMap[UsdaFoodNutrient.POLYUNSATURATED_FAT] ?: 0.0
+                val chol = nMap[UsdaFoodNutrient.CHOLESTEROL] ?: 0.0
+
+                if (satFat > 0 || monoFat > 0 || polyFat > 0 || chol > 0) {
+                    val enriched = nutrients.copy(
+                        saturatedFat = satFat,
+                        monounsaturatedFat = monoFat,
+                        polyunsaturatedFat = polyFat,
+                        cholesterol = chol
+                    )
+                    if (cacheEntityId != null) {
+                        db.foodCacheDao().updateNutrients(cacheEntityId, gson.toJson(enriched))
+                    }
+                    Log.d("Repository", "Fat details enriched from USDA for '$foodNameEn': sat=$satFat mono=$monoFat poly=$polyFat chol=$chol")
+                    return enriched
+                }
+            }
+
+            // USDA didn't have data — fall back to AI
+            val aiPrompt = """
+For the food product "$foodNameEn" with total fat ${nutrients.fat}g per 100g, estimate the fat breakdown.
+Return ONLY a JSON object:
+{"saturated_fat": <grams>, "monounsaturated_fat": <grams>, "polyunsaturated_fat": <grams>, "cholesterol": <mg>}
+Rules:
+- saturated_fat + monounsaturated_fat + polyunsaturated_fat should approximately equal ${nutrients.fat}g (total fat)
+- cholesterol is in mg (milligrams), typical range 0-300mg per 100g
+- Use established nutritional data for this food
+""".trimIndent()
+
+            val aiText = callOpenRouterWithRetry(
+                messages = listOf(OpenRouterMessage(role = "user", content = aiPrompt)),
+                models = textModels
+            )
+            val jsonStr = aiText.replace(Regex("```json\\s*|```\\s*"), "").trim()
+            val map = gson.fromJson(jsonStr, Map::class.java) as? Map<String, Any>
+            if (map != null) {
+                val satFat = (map["saturated_fat"] as? Number)?.toDouble() ?: 0.0
+                val monoFat = (map["monounsaturated_fat"] as? Number)?.toDouble() ?: 0.0
+                val polyFat = (map["polyunsaturated_fat"] as? Number)?.toDouble() ?: 0.0
+                val chol = (map["cholesterol"] as? Number)?.toDouble() ?: 0.0
+
+                val enriched = nutrients.copy(
+                    saturatedFat = satFat,
+                    monounsaturatedFat = monoFat,
+                    polyunsaturatedFat = polyFat,
+                    cholesterol = chol
+                )
+                if (cacheEntityId != null) {
+                    db.foodCacheDao().updateNutrients(cacheEntityId, gson.toJson(enriched))
+                }
+                Log.d("Repository", "Fat details enriched from AI for '$foodNameEn': sat=$satFat mono=$monoFat poly=$polyFat chol=$chol")
+                return enriched
+            }
+        } catch (e: Exception) {
+            Log.w("Repository", "Fat enrichment failed for '$foodNameEn': ${e.message}")
+        }
+
+        return nutrients
+    }
+
     suspend fun cacheFoodData(name: String, nameEn: String, per100g: NutrientData) {
         try {
             saveToCache(name, nameEn, per100g)
         } catch (e: Exception) {
             Log.w("Repository", "Failed to cache food: ${e.message}")
         }
+    }
+
+    /**
+     * Public wrapper: parse nutrients from a cache entry and enrich fat details if needed.
+     */
+    suspend fun enrichFatDetailsForCachedEntry(entry: FoodCacheEntity): NutrientData {
+        val nutrients = parseNutrients(entry.nutrientsPer100gJson)
+        return enrichFatDetailsIfNeeded(nutrients, entry.keyEn, entry.id)
     }
 
     /**
@@ -323,6 +444,13 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
             } else {
                 uncachedItems.add(name to weight)
             }
+        }
+
+        // Enrich fat details for cached items (legacy data without fat breakdown)
+        for (item in cachedResults) {
+            item.nutrientsPer100g = enrichFatDetailsIfNeeded(
+                item.nutrientsPer100g!!, item.foodNameEn, item.cacheEntityId
+            )
         }
 
         // If everything was cached, return immediately
@@ -435,11 +563,12 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
             val cachedByEn = if (useCache) findInCache(nameEn) else null
             if (cachedByEn != null) {
                 Log.d("Repository", "Cache HIT by EN key '$nameEn' for '$nameRu'")
+                val enrichedNutrients = enrichFatDetailsIfNeeded(cachedByEn.second, nameEn, cachedByEn.first.id)
                 // Also save under original name for next time
-                try { saveToCache(nameRu, nameEn, cachedByEn.second) } catch (_: Exception) {}
+                try { saveToCache(nameRu, nameEn, enrichedNutrients) } catch (_: Exception) {}
                 cachedResults.add(PendingFood(
                     foodNameRu = nameRu, foodNameEn = nameEn,
-                    weight = weight, nutrientsPer100g = cachedByEn.second, fromCache = true
+                    weight = weight, nutrientsPer100g = enrichedNutrients, fromCache = true
                 ))
             } else {
                 aiPending.add(PendingFood(
@@ -595,7 +724,12 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
                     // Store per 100g for caching
                     val per100g = NutrientData(
                         calories = nMap[N.ENERGY] ?: 0.0, protein = nMap[N.PROTEIN] ?: 0.0,
-                        fat = nMap[N.FAT] ?: 0.0, carbs = nMap[N.CARBS] ?: 0.0,
+                        fat = nMap[N.FAT] ?: 0.0,
+                        saturatedFat = nMap[N.SATURATED_FAT] ?: 0.0,
+                        monounsaturatedFat = nMap[N.MONOUNSATURATED_FAT] ?: 0.0,
+                        polyunsaturatedFat = nMap[N.POLYUNSATURATED_FAT] ?: 0.0,
+                        cholesterol = nMap[N.CHOLESTEROL] ?: 0.0,
+                        carbs = nMap[N.CARBS] ?: 0.0,
                         fiber = nMap[N.FIBER] ?: 0.0, vitaminA = nMap[N.VITAMIN_A] ?: 0.0,
                         vitaminB1 = nMap[N.VITAMIN_B1] ?: 0.0, vitaminB2 = nMap[N.VITAMIN_B2] ?: 0.0,
                         vitaminB3 = nMap[N.VITAMIN_B3] ?: 0.0, vitaminB5 = nMap[N.VITAMIN_B5] ?: 0.0,
@@ -671,7 +805,9 @@ $foodsList
 Return format (array of ${needAi.size} objects):
 [
   {
-    "calories": <kcal>, "protein": <g>, "fat": <g>, "carbs": <g>, "fiber": <g>,
+    "calories": <kcal>, "protein": <g>, "fat": <g>,
+    "saturated_fat": <g>, "monounsaturated_fat": <g>, "polyunsaturated_fat": <g>, "cholesterol": <mg>,
+    "carbs": <g>, "fiber": <g>,
     "vitamin_a": <mcg>, "vitamin_b1": <mg>, "vitamin_b2": <mg>, "vitamin_b3": <mg>,
     "vitamin_b5": <mg>, "vitamin_b6": <mg>, "vitamin_b7": <mcg>, "vitamin_b9": <mcg>,
     "vitamin_b12": <mcg>, "vitamin_c": <mg>, "vitamin_d": <mcg>, "vitamin_e": <mg>,
@@ -703,7 +839,10 @@ Return format (array of ${needAi.size} objects):
                         }
                         item.nutrientsPer100g = NutrientData(
                             calories = v("calories"), protein = v("protein"),
-                            fat = v("fat"), carbs = v("carbs"), fiber = v("fiber"),
+                            fat = v("fat"),
+                            saturatedFat = v("saturated_fat"), monounsaturatedFat = v("monounsaturated_fat"),
+                            polyunsaturatedFat = v("polyunsaturated_fat"), cholesterol = v("cholesterol"),
+                            carbs = v("carbs"), fiber = v("fiber"),
                             vitaminA = v("vitamin_a"), vitaminB1 = v("vitamin_b1"),
                             vitaminB2 = v("vitamin_b2"), vitaminB3 = v("vitamin_b3"),
                             vitaminB5 = v("vitamin_b5"), vitaminB6 = v("vitamin_b6"),
@@ -826,7 +965,9 @@ Return format (array of ${usdaItemsWithMissingMicros.size} objects):
                     val fallbackPrompt = """
 You are a professional nutritionist. Provide nutritional values PER 100 GRAMS for: ${item.foodNameEn}
 Return ONLY a JSON object:
-{"calories": <kcal>, "protein": <g>, "fat": <g>, "carbs": <g>, "fiber": <g>,
+{"calories": <kcal>, "protein": <g>, "fat": <g>,
+"saturated_fat": <g>, "monounsaturated_fat": <g>, "polyunsaturated_fat": <g>, "cholesterol": <mg>,
+"carbs": <g>, "fiber": <g>,
 "vitamin_a": <mcg>, "vitamin_c": <mg>, "calcium": <mg>, "iron": <mg>,
 "vitamin_b1": <mg>, "vitamin_b2": <mg>, "vitamin_b3": <mg>, "vitamin_b5": <mg>,
 "vitamin_b6": <mg>, "vitamin_b7": <mcg>, "vitamin_b9": <mcg>, "vitamin_b12": <mcg>,
@@ -851,7 +992,10 @@ Return ONLY a JSON object:
                         }
                         item.nutrientsPer100g = NutrientData(
                             calories = v("calories"), protein = v("protein"),
-                            fat = v("fat"), carbs = v("carbs"), fiber = v("fiber"),
+                            fat = v("fat"),
+                            saturatedFat = v("saturated_fat"), monounsaturatedFat = v("monounsaturated_fat"),
+                            polyunsaturatedFat = v("polyunsaturated_fat"), cholesterol = v("cholesterol"),
+                            carbs = v("carbs"), fiber = v("fiber"),
                             vitaminA = v("vitamin_a"), vitaminB1 = v("vitamin_b1"),
                             vitaminB2 = v("vitamin_b2"), vitaminB3 = v("vitamin_b3"),
                             vitaminB5 = v("vitamin_b5"), vitaminB6 = v("vitamin_b6"),
@@ -1157,7 +1301,9 @@ You are a professional nutritionist. Look at this food photo and:
 
 Return ONLY a JSON object:
 {"food_name": "<название на русском>", "food_name_en": "<English translation>", "weight_grams": <number>,
-"calories": <kcal>, "protein": <g>, "fat": <g>, "carbs": <g>, "fiber": <g>,
+"calories": <kcal>, "protein": <g>, "fat": <g>,
+"saturated_fat": <g>, "monounsaturated_fat": <g>, "polyunsaturated_fat": <g>, "cholesterol": <mg>,
+"carbs": <g>, "fiber": <g>,
 "vitamin_a": <mcg>, "vitamin_b1": <mg>, "vitamin_b2": <mg>, "vitamin_b3": <mg>,
 "vitamin_b5": <mg>, "vitamin_b6": <mg>, "vitamin_b7": <mcg>, "vitamin_b9": <mcg>,
 "vitamin_b12": <mcg>, "vitamin_c": <mg>, "vitamin_d": <mcg>, "vitamin_e": <mg>,
@@ -1207,7 +1353,10 @@ Return ONLY a JSON object:
 
         val per100g = NutrientData(
             calories = v("calories"), protein = v("protein"),
-            fat = v("fat"), carbs = v("carbs"), fiber = v("fiber"),
+            fat = v("fat"),
+            saturatedFat = v("saturated_fat"), monounsaturatedFat = v("monounsaturated_fat"),
+            polyunsaturatedFat = v("polyunsaturated_fat"), cholesterol = v("cholesterol"),
+            carbs = v("carbs"), fiber = v("fiber"),
             vitaminA = v("vitamin_a"), vitaminB1 = v("vitamin_b1"),
             vitaminB2 = v("vitamin_b2"), vitaminB3 = v("vitamin_b3"),
             vitaminB5 = v("vitamin_b5"), vitaminB6 = v("vitamin_b6"),
@@ -1281,12 +1430,13 @@ Return ONLY a JSON object:
         if (useCache) {
             val cached = findInCache(dishName)
             if (cached != null) {
+                val enrichedNutrients = enrichFatDetailsIfNeeded(cached.second, cached.first.keyEn, cached.first.id)
                 val factor = weightGrams / 100.0
                 return FoodAnalysisResult(
                     foodName = dishName,
                     foodNameEn = cached.first.keyEn,
                     weightGrams = weightGrams,
-                    nutrients = cached.second * factor,
+                    nutrients = enrichedNutrients * factor,
                     fromCache = true
                 )
             }
@@ -1298,7 +1448,9 @@ You are a professional nutritionist. Provide nutritional values PER 100 GRAMS fo
 "$dishName"
 
 Return ONLY a JSON object with these fields:
-{"food_name_en": "<English translation>", "calories": <kcal>, "protein": <g>, "fat": <g>, "carbs": <g>, "fiber": <g>,
+{"food_name_en": "<English translation>", "calories": <kcal>, "protein": <g>, "fat": <g>,
+"saturated_fat": <g>, "monounsaturated_fat": <g>, "polyunsaturated_fat": <g>, "cholesterol": <mg>,
+"carbs": <g>, "fiber": <g>,
 "vitamin_a": <mcg>, "vitamin_b1": <mg>, "vitamin_b2": <mg>, "vitamin_b3": <mg>,
 "vitamin_b5": <mg>, "vitamin_b6": <mg>, "vitamin_b7": <mcg>, "vitamin_b9": <mcg>,
 "vitamin_b12": <mcg>, "vitamin_c": <mg>, "vitamin_d": <mcg>, "vitamin_e": <mg>,
@@ -1328,7 +1480,10 @@ Return ONLY a JSON object with these fields:
 
         val per100g = NutrientData(
             calories = v("calories"), protein = v("protein"),
-            fat = v("fat"), carbs = v("carbs"), fiber = v("fiber"),
+            fat = v("fat"),
+            saturatedFat = v("saturated_fat"), monounsaturatedFat = v("monounsaturated_fat"),
+            polyunsaturatedFat = v("polyunsaturated_fat"), cholesterol = v("cholesterol"),
+            carbs = v("carbs"), fiber = v("fiber"),
             vitaminA = v("vitamin_a"), vitaminB1 = v("vitamin_b1"),
             vitaminB2 = v("vitamin_b2"), vitaminB3 = v("vitamin_b3"),
             vitaminB5 = v("vitamin_b5"), vitaminB6 = v("vitamin_b6"),
@@ -1408,6 +1563,10 @@ Return ONLY a JSON object with these fields:
                 calories = n.energyKcal100g ?: 0.0,
                 protein = n.proteins100g ?: 0.0,
                 fat = n.fat100g ?: 0.0,
+                saturatedFat = n.saturatedFat100g ?: 0.0,
+                monounsaturatedFat = n.monounsaturatedFat100g ?: 0.0,
+                polyunsaturatedFat = n.polyunsaturatedFat100g ?: 0.0,
+                cholesterol = n.cholesterol100g ?: 0.0,
                 carbs = n.carbohydrates100g ?: 0.0,
                 fiber = n.fiber100g ?: 0.0,
                 vitaminA = n.vitaminA100g ?: 0.0,
@@ -1451,7 +1610,8 @@ Return ONLY a JSON object with these fields:
         val cachedByBarcode = findInCache("barcode:$barcode")
         if (cachedByBarcode != null) {
             Log.d("Repository", "Barcode cache HIT for $barcode: ${cachedByBarcode.first.keyEn}")
-            return Triple(cachedByBarcode.first.keyEn, cachedByBarcode.second, true)
+            val enriched = enrichFatDetailsIfNeeded(cachedByBarcode.second, cachedByBarcode.first.keyEn, cachedByBarcode.first.id)
+            return Triple(cachedByBarcode.first.keyEn, enriched, true)
         }
 
         // 2. OFF API lookup
@@ -1592,7 +1752,8 @@ Serving size: $servingSize
 
 IMPORTANT UNITS — use these EXACT units:
 - calories: kcal
-- protein, fat, carbs, fiber: grams (g)
+- protein, fat, saturated_fat, monounsaturated_fat, polyunsaturated_fat, carbs, fiber: grams (g)
+- cholesterol: mg
 - vitamin_a: mcg RAE
 - vitamin_b1, vitamin_b2, vitamin_b3, vitamin_b5, vitamin_b6: mg
 - vitamin_b7: mcg
@@ -1627,6 +1788,10 @@ JSON:
                 calories = v("calories"),
                 protein = v("protein"),
                 fat = v("fat"),
+                saturatedFat = v("saturated_fat"),
+                monounsaturatedFat = v("monounsaturated_fat"),
+                polyunsaturatedFat = v("polyunsaturated_fat"),
+                cholesterol = v("cholesterol"),
                 carbs = v("carbs"),
                 fiber = v("fiber"),
                 vitaminA = v("vitamin_a"),
@@ -1711,7 +1876,20 @@ JSON:
                     throw lastError!!
                 }
 
-                val msg = response.choices?.firstOrNull()?.message
+                val choice = response.choices?.firstOrNull()
+
+                // Handle choice-level errors (e.g. provider timeout with HTTP 200)
+                if (choice?.error != null) {
+                    Log.w("Repository", "Model $model choice error ${choice.error.code}: ${choice.error.message}")
+                    lastError = Exception("Provider: ${choice.error.message}")
+                    if (attempt < maxRetries) {
+                        kotlinx.coroutines.delay(2000)
+                        continue
+                    }
+                    throw lastError!!
+                }
+
+                val msg = choice?.message
                 val text = msg?.content
                 if (text.isNullOrBlank()) {
                     val reasoning = msg?.reasoning
@@ -1721,6 +1899,16 @@ JSON:
                         Log.w("Repository", "Model $model returned empty content")
                     }
                     lastError = Exception("Пустой ответ от модели")
+                    if (attempt < maxRetries) {
+                        kotlinx.coroutines.delay(1000)
+                        continue
+                    }
+                    throw lastError!!
+                }
+                // Validate that response contains JSON structure
+                if (!text.contains('{') && !text.contains('[')) {
+                    Log.w("Repository", "Model $model: response has no JSON (${text.take(100)})")
+                    lastError = Exception("Ответ модели не содержит JSON")
                     if (attempt < maxRetries) {
                         kotlinx.coroutines.delay(1000)
                         continue

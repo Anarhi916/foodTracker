@@ -174,6 +174,10 @@ private fun HistoryDayCard(
                     NutrientProgressBar("Белки", dayTotals.protein, norms.protein, "г")
                     NutrientProgressBar("Жиры", dayTotals.fat, norms.fat, "г")
                     NutrientProgressBar("Углеводы", dayTotals.carbs, norms.carbs, "г")
+                    NutrientProgressBar("Насыщ. жиры", dayTotals.saturatedFat, norms.saturatedFat, "г", upperRatio = 1.0)
+                    NutrientProgressBar("Мононенасыщ.", dayTotals.monounsaturatedFat, norms.monounsaturatedFat, "г", upperRatio = 3.0)
+                    NutrientProgressBar("Полиненасыщ.", dayTotals.polyunsaturatedFat, norms.polyunsaturatedFat, "г", upperRatio = 3.0)
+                    NutrientProgressBar("Холестерин", dayTotals.cholesterol, norms.cholesterol, "мг", upperRatio = 1.3)
                 }
             }
 

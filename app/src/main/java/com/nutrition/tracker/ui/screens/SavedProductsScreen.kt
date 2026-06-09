@@ -31,6 +31,7 @@ fun SavedProductsScreen(
     onBack: () -> Unit
 ) {
     val cachedFoods by viewModel.cachedFoods.collectAsStateWithLifecycle()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var showDeleteConfirm by remember { mutableStateOf<FoodCacheEntity?>(null) }
     var showClearAllConfirm by remember { mutableStateOf(false) }
     var editEntry by remember { mutableStateOf<FoodCacheEntity?>(null) }
@@ -153,6 +154,10 @@ fun SavedProductsScreen(
             Field("Калории", "ккал", { it.calories }, { n, v -> n.copy(calories = v) }),
             Field("Белки", "г", { it.protein }, { n, v -> n.copy(protein = v) }),
             Field("Жиры", "г", { it.fat }, { n, v -> n.copy(fat = v) }),
+            Field("Насыщенные жиры", "г", { it.saturatedFat }, { n, v -> n.copy(saturatedFat = v) }),
+            Field("Мононенасыщ. жиры", "г", { it.monounsaturatedFat }, { n, v -> n.copy(monounsaturatedFat = v) }),
+            Field("Полиненасыщ. жиры", "г", { it.polyunsaturatedFat }, { n, v -> n.copy(polyunsaturatedFat = v) }),
+            Field("Холестерин", "мг", { it.cholesterol }, { n, v -> n.copy(cholesterol = v) }),
             Field("Углеводы", "г", { it.carbs }, { n, v -> n.copy(carbs = v) }),
             Field("Клетчатка", "г", { it.fiber }, { n, v -> n.copy(fiber = v) }),
             Field("Витамин A", "мкг", { it.vitaminA }, { n, v -> n.copy(vitaminA = v) }),
@@ -326,7 +331,8 @@ fun SavedProductsScreen(
             )
         }
     ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+        Column(modifier = Modifier.fillMaxSize()) {
             // Search bar
             OutlinedTextField(
                 value = searchQuery,
@@ -454,5 +460,22 @@ fun SavedProductsScreen(
                 }
             }
         }
+
+        // Loading overlay
+        if (uiState.isLoading) {
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator()
+                        Spacer(Modifier.height(8.dp))
+                        Text("Обогащаем данные...", style = MaterialTheme.typography.bodyLarge)
+                    }
+                }
+            }
+        }
+        } // Box
     }
 }

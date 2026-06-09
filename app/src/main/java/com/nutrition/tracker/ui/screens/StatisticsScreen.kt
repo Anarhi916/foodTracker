@@ -296,6 +296,15 @@ fun StatisticsScreen(
                         normItems = normForPeriod?.mineralsList()
                     )
                 }
+
+                // Fat details
+                item {
+                    NutrientStatCard(
+                        title = "Жиры (детально)",
+                        items = t.fatDetailsList(),
+                        normItems = normForPeriod?.fatDetailsList()
+                    )
+                }
             }
 
             item { Spacer(Modifier.height(16.dp)) }

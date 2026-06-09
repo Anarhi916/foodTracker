@@ -35,7 +35,9 @@ data class OpenRouterResponse(
 )
 
 data class OpenRouterChoice(
-    val message: OpenRouterResponseMessage? = null
+    val message: OpenRouterResponseMessage? = null,
+    val error: OpenRouterError? = null,
+    @SerializedName("finish_reason") val finishReason: String? = null
 )
 
 data class OpenRouterResponseMessage(

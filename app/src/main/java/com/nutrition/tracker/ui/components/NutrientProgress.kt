@@ -322,6 +322,53 @@ fun MineralsProgressSection(
 }
 
 @Composable
+fun FatDetailsProgressSection(
+    totals: NutrientData,
+    norms: NutrientData,
+    entries: List<FoodEntryEntity> = emptyList(),
+    parseNutrients: ((String) -> NutrientData)? = null
+) {
+    var breakdownKey by remember { mutableStateOf<Pair<String, String>?>(null) }
+
+    val totalsList = totals.fatDetailsList()
+    val normsList = norms.fatDetailsList()
+    val fatKeys = listOf("saturatedFat", "monounsaturatedFat", "polyunsaturatedFat", "cholesterol")
+    // Upper limits: saturated strict (heart), mono/poly lenient (beneficial), cholesterol moderate
+    val fatUpperRatios = listOf(1.0, 3.0, 3.0, 1.3)
+
+    Card(
+        modifier = Modifier.fillMaxWidth().animateContentSize(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            totalsList.forEachIndexed { index, (name, value) ->
+                val normValue = normsList.getOrNull(index)?.second ?: 0.0
+                val key = fatKeys.getOrNull(index) ?: ""
+                val upperRatio = fatUpperRatios.getOrNull(index) ?: 1.5
+                NutrientProgressBar(
+                    name, value, normValue, "",
+                    upperRatio = upperRatio,
+                    nutrientKey = key,
+                    onClick = if (parseNutrients != null) {{ breakdownKey = name to key }} else null
+                )
+            }
+        }
+    }
+
+    breakdownKey?.let { (name, key) ->
+        if (parseNutrients != null) {
+            NutrientBreakdownDialog(
+                nutrientName = name,
+                nutrientKey = key,
+                entries = entries,
+                parseNutrients = parseNutrients,
+                onDismiss = { breakdownKey = null }
+            )
+        }
+    }
+}
+
+@Composable
 fun SectionHeader(
     title: String,
     expanded: Boolean,

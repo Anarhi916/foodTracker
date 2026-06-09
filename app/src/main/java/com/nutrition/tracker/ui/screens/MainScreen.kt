@@ -40,6 +40,7 @@ fun MainScreen(
 
     var vitaminsExpanded by remember { mutableStateOf(false) }
     var mineralsExpanded by remember { mutableStateOf(false) }
+    var fatDetailsExpanded by remember { mutableStateOf(false) }
 
     // Confirmation dialog
     if (uiState.showConfirmDialog && uiState.pendingFood != null) {
@@ -293,6 +294,25 @@ fun MainScreen(
                     if (mineralsExpanded) {
                         item {
                             MineralsProgressSection(
+                                totals = totals, norms = norms!!,
+                                entries = entries,
+                                parseNutrients = { viewModel.parseNutrients(it) }
+                            )
+                        }
+                    }
+
+                    // Fat details
+                    item {
+                        SectionHeader(
+                            title = "Жиры (детально)",
+                            expanded = fatDetailsExpanded,
+                            onToggle = { fatDetailsExpanded = !fatDetailsExpanded }
+                        )
+                    }
+
+                    if (fatDetailsExpanded) {
+                        item {
+                            FatDetailsProgressSection(
                                 totals = totals, norms = norms!!,
                                 entries = entries,
                                 parseNutrients = { viewModel.parseNutrients(it) }

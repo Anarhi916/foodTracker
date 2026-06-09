@@ -26,6 +26,10 @@ data class UsdaFoodNutrient(
         const val ENERGY = 1008
         const val PROTEIN = 1003
         const val FAT = 1004
+        const val SATURATED_FAT = 1258
+        const val MONOUNSATURATED_FAT = 1292
+        const val POLYUNSATURATED_FAT = 1293
+        const val CHOLESTEROL = 1253
         const val CARBS = 1005
         const val FIBER = 1079
         const val VITAMIN_A = 1106  // RAE, mcg
