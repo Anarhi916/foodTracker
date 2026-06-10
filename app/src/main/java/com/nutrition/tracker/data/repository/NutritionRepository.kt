@@ -256,7 +256,8 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
 
     /**
      * Enriches fat details (saturated, mono, poly, cholesterol) for cached products
-     * that have total fat > 0 but all 4 detail fields are 0 (legacy data).
+     * that have total fat > 0 but incomplete fat breakdown.
+     * Triggers if both mono and poly are 0 (even if saturated is known from OFF).
      * Tries USDA first (free), falls back to AI.
      * Returns enriched NutrientData and updates cache in-place.
      */
@@ -265,15 +266,17 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
         foodNameEn: String,
         cacheEntityId: Long?
     ): NutrientData {
-        // Only enrich if fat > 0 but ALL 4 detail fields are zero
+        // Only enrich if fat > 0 and both mono AND poly are missing (0.0)
         if (nutrients.fat <= 0.0) return nutrients
-        if (nutrients.saturatedFat != 0.0 || nutrients.monounsaturatedFat != 0.0 ||
-            nutrients.polyunsaturatedFat != 0.0 || nutrients.cholesterol != 0.0) return nutrients
+        if (nutrients.monounsaturatedFat != 0.0 || nutrients.polyunsaturatedFat != 0.0) return nutrients
 
-        Log.d("Repository", "Enriching fat details for '$foodNameEn' (fat=${nutrients.fat})")
+        Log.d("Repository", "Enriching fat details for '$foodNameEn' (fat=${nutrients.fat}, sat=${nutrients.saturatedFat}, chol=${nutrients.cholesterol})")
+
+        // Working copy — accumulates data from each source, only filling zeros
+        var current = nutrients
 
         try {
-            // Try USDA first
+            // --- Step 1: USDA — fill only fields that are still 0 ---
             val usdaResult = usdaApi.searchFoods(query = foodNameEn)
             val food = usdaResult.foods?.firstOrNull { f ->
                 f.foodNutrients?.any { it.nutrientId == UsdaFoodNutrient.ENERGY && (it.value ?: 0.0) > 0 } == true
@@ -289,28 +292,24 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
                 for (fn in food.foodNutrients) {
                     if (fn.nutrientId != null && fn.value != null) nMap[fn.nutrientId] = fn.value
                 }
-                val satFat = nMap[UsdaFoodNutrient.SATURATED_FAT] ?: 0.0
-                val monoFat = nMap[UsdaFoodNutrient.MONOUNSATURATED_FAT] ?: 0.0
-                val polyFat = nMap[UsdaFoodNutrient.POLYUNSATURATED_FAT] ?: 0.0
-                val chol = nMap[UsdaFoodNutrient.CHOLESTEROL] ?: 0.0
+                val uSat = nMap[UsdaFoodNutrient.SATURATED_FAT] ?: 0.0
+                val uMono = nMap[UsdaFoodNutrient.MONOUNSATURATED_FAT] ?: 0.0
+                val uPoly = nMap[UsdaFoodNutrient.POLYUNSATURATED_FAT] ?: 0.0
+                val uChol = nMap[UsdaFoodNutrient.CHOLESTEROL] ?: 0.0
 
-                if (satFat > 0 || monoFat > 0 || polyFat > 0 || chol > 0) {
-                    val enriched = nutrients.copy(
-                        saturatedFat = satFat,
-                        monounsaturatedFat = monoFat,
-                        polyunsaturatedFat = polyFat,
-                        cholesterol = chol
-                    )
-                    if (cacheEntityId != null) {
-                        db.foodCacheDao().updateNutrients(cacheEntityId, gson.toJson(enriched))
-                    }
-                    Log.d("Repository", "Fat details enriched from USDA for '$foodNameEn': sat=$satFat mono=$monoFat poly=$polyFat chol=$chol")
-                    return enriched
-                }
+                current = current.copy(
+                    saturatedFat = if (current.saturatedFat == 0.0 && uSat > 0) uSat else current.saturatedFat,
+                    monounsaturatedFat = if (current.monounsaturatedFat == 0.0 && uMono > 0) uMono else current.monounsaturatedFat,
+                    polyunsaturatedFat = if (current.polyunsaturatedFat == 0.0 && uPoly > 0) uPoly else current.polyunsaturatedFat,
+                    cholesterol = if (current.cholesterol == 0.0 && uChol > 0) uChol else current.cholesterol
+                )
+                Log.d("Repository", "After USDA for '$foodNameEn': sat=${current.saturatedFat} mono=${current.monounsaturatedFat} poly=${current.polyunsaturatedFat} chol=${current.cholesterol}")
             }
 
-            // USDA didn't have data — fall back to AI
-            val aiPrompt = """
+            // --- Step 2: If mono or poly still 0, ask AI to fill remaining gaps ---
+            if (current.monounsaturatedFat == 0.0 || current.polyunsaturatedFat == 0.0) {
+                Log.d("Repository", "Asking AI for remaining fat details for '$foodNameEn'")
+                val aiPrompt = """
 For the food product "$foodNameEn" with total fat ${nutrients.fat}g per 100g, estimate the fat breakdown.
 Return ONLY a JSON object:
 {"saturated_fat": <grams>, "monounsaturated_fat": <grams>, "polyunsaturated_fat": <grams>, "cholesterol": <mg>}
@@ -320,35 +319,44 @@ Rules:
 - Use established nutritional data for this food
 """.trimIndent()
 
-            val aiText = callOpenRouterWithRetry(
-                messages = listOf(OpenRouterMessage(role = "user", content = aiPrompt)),
-                models = textModels
-            )
-            val jsonStr = aiText.replace(Regex("```json\\s*|```\\s*"), "").trim()
-            val map = gson.fromJson(jsonStr, Map::class.java) as? Map<String, Any>
-            if (map != null) {
-                val satFat = (map["saturated_fat"] as? Number)?.toDouble() ?: 0.0
-                val monoFat = (map["monounsaturated_fat"] as? Number)?.toDouble() ?: 0.0
-                val polyFat = (map["polyunsaturated_fat"] as? Number)?.toDouble() ?: 0.0
-                val chol = (map["cholesterol"] as? Number)?.toDouble() ?: 0.0
-
-                val enriched = nutrients.copy(
-                    saturatedFat = satFat,
-                    monounsaturatedFat = monoFat,
-                    polyunsaturatedFat = polyFat,
-                    cholesterol = chol
+                val aiText = callOpenRouterWithRetry(
+                    messages = listOf(OpenRouterMessage(role = "user", content = aiPrompt)),
+                    models = textModels
                 )
-                if (cacheEntityId != null) {
-                    db.foodCacheDao().updateNutrients(cacheEntityId, gson.toJson(enriched))
+                val jsonStr = aiText.replace(Regex("```json\\s*|```\\s*"), "").trim()
+                val map = gson.fromJson(jsonStr, Map::class.java) as? Map<String, Any>
+                if (map != null) {
+                    val aiSat = (map["saturated_fat"] as? Number)?.toDouble() ?: 0.0
+                    val aiMono = (map["monounsaturated_fat"] as? Number)?.toDouble() ?: 0.0
+                    val aiPoly = (map["polyunsaturated_fat"] as? Number)?.toDouble() ?: 0.0
+                    val aiChol = (map["cholesterol"] as? Number)?.toDouble() ?: 0.0
+
+                    current = current.copy(
+                        saturatedFat = if (current.saturatedFat == 0.0 && aiSat > 0) aiSat else current.saturatedFat,
+                        monounsaturatedFat = if (current.monounsaturatedFat == 0.0 && aiMono > 0) aiMono else current.monounsaturatedFat,
+                        polyunsaturatedFat = if (current.polyunsaturatedFat == 0.0 && aiPoly > 0) aiPoly else current.polyunsaturatedFat,
+                        cholesterol = if (current.cholesterol == 0.0 && aiChol > 0) aiChol else current.cholesterol
+                    )
+                    Log.d("Repository", "After AI for '$foodNameEn': sat=${current.saturatedFat} mono=${current.monounsaturatedFat} poly=${current.polyunsaturatedFat} chol=${current.cholesterol}")
                 }
-                Log.d("Repository", "Fat details enriched from AI for '$foodNameEn': sat=$satFat mono=$monoFat poly=$polyFat chol=$chol")
-                return enriched
             }
         } catch (e: Exception) {
             Log.w("Repository", "Fat enrichment failed for '$foodNameEn': ${e.message}")
         }
 
-        return nutrients
+        // --- Step 3: Sentinel — if mono/poly are still 0 after all sources, set 0.0001 to prevent re-enrichment ---
+        if (current.monounsaturatedFat == 0.0 && current.polyunsaturatedFat == 0.0) {
+            current = current.copy(monounsaturatedFat = 0.0001, polyunsaturatedFat = 0.0001)
+            Log.d("Repository", "Set sentinel for '$foodNameEn' — no sources provided mono/poly data")
+        }
+
+        // Save to cache if changed
+        if (current != nutrients && cacheEntityId != null) {
+            db.foodCacheDao().updateNutrients(cacheEntityId, gson.toJson(current))
+        }
+        Log.d("Repository", "Fat enrichment complete for '$foodNameEn': sat=${current.saturatedFat} mono=${current.monounsaturatedFat} poly=${current.polyunsaturatedFat} chol=${current.cholesterol}")
+
+        return current
     }
 
     suspend fun cacheFoodData(name: String, nameEn: String, per100g: NutrientData) {
@@ -624,14 +632,36 @@ Rules:
                     .maxByOrNull { it.length }
                     ?: queryWords.maxByOrNull { it.length } // fallback if all words are cooking terms
                 val secondaryWords = queryWords.filter { it != mainWord }
+                // Generate stem-like forms for matching (cherry↔cherries, potato↔potatoes, berry↔berries)
+                fun wordForms(word: String): List<String> {
+                    val forms = mutableListOf(word)
+                    forms.add(word + "s")
+                    forms.add(word + "es")
+                    if (word.endsWith("y") && word.length > 2) {
+                        forms.add(word.dropLast(1) + "ies") // cherry→cherries
+                    }
+                    if (word.endsWith("ies") && word.length > 4) {
+                        forms.add(word.dropLast(3) + "y") // cherries→cherry
+                    }
+                    if (word.endsWith("es") && word.length > 3) {
+                        forms.add(word.dropLast(2)) // potatoes→potato
+                    }
+                    if (word.endsWith("s") && !word.endsWith("ss") && word.length > 2) {
+                        forms.add(word.dropLast(1)) // cherries already handled above, but apples→apple
+                    }
+                    return forms
+                }
+                fun descContainsWord(desc: String, word: String): Boolean {
+                    return wordForms(word).any { desc.contains(it) }
+                }
                 fun isRelevant(description: String?): Boolean {
                     if (description == null || mainWord == null) return false
                     val desc = description.lowercase()
-                    // Main word MUST be present
-                    if (!desc.contains(mainWord)) return false
+                    // Main word MUST be present (check all plural/singular forms)
+                    if (!descContainsWord(desc, mainWord)) return false
                     // If there are secondary words, at least one should match too (if 3+ query words)
                     if (queryWords.size >= 3 && secondaryWords.isNotEmpty()) {
-                        return secondaryWords.any { desc.contains(it) }
+                        return secondaryWords.any { descContainsWord(desc, it) }
                     }
                     return true
                 }
@@ -659,15 +689,17 @@ Rules:
                         else -> 100
                     }
                     // Word match count bonus (each matching word = +30)
-                    val wordMatchBonus = queryWords.count { desc.contains(it) } * 30
+                    val wordMatchBonus = queryWords.count { descContainsWord(desc, it) } * 30
                     // Prefer generic/plain entries over recipes/mixed dishes
                     // If query implies cooking (porridge, boiled, cooked), prefer cooked entries
                     val queryImpliesCooked = queryWords.any { it in setOf("porridge", "cooked", "boiled", "steamed", "stewed", "braised", "baked", "fried", "grilled", "roasted") }
+                    // "from raw" means cooked starting from raw state — NOT actually raw
+                    val isActuallyRaw = desc.contains("raw") && !desc.contains("from raw")
                     val plainBonus = when {
                         desc.contains(", nfs") -> 25       // "Not Further Specified" = generic average
                         queryImpliesCooked && desc.contains("cooked") -> 30  // prefer cooked when query implies it
-                        queryImpliesCooked && desc.contains("raw") -> -20    // penalize raw when query implies cooked
-                        !queryImpliesCooked && desc.contains("raw") -> 20    // raw = plain product (only when not cooking)
+                        queryImpliesCooked && isActuallyRaw -> -20    // penalize raw when query implies cooked
+                        !queryImpliesCooked && isActuallyRaw -> 20    // raw = plain product (only when not cooking)
                         desc.startsWith("fish,") || desc.startsWith("fish ") -> 15 // USDA standard fish entry
                         desc.contains("salted") || desc.contains("smoked") || desc.contains("canned") -> 10
                         else -> 0
@@ -689,16 +721,20 @@ Rules:
                     // e.g. "STRAWBERRY MILKSHAKE CEREAL" is a cereal, not a milkshake
                     val differentCategoryWords = listOf("cereal", "protein powder", "toaster pastries", "pastries", "ice cream", "candy", "bar", "cookie", "cookies", "gummies", "gummy", "supplement", "mix", "powder")
                     val categoryPenalty = if (f.dataType == "Branded" && differentCategoryWords.any { desc.contains(it) && !queryLowerFull.contains(it) }) -100 else 0
-                    // Skin handling for poultry: prefer "skinless"/"meat only" when query doesn't mention skin
+                    // Skin/coating handling for poultry: prefer "skinless"/"meat only"/"skin not eaten" when query doesn't mention skin
                     // Users in Eastern Europe typically mean skinless breast/thigh unless explicitly stated
                     val queryMentionsSkin = queryLowerFull.contains("skin") || queryLowerFull.contains("with skin")
+                    val queryMentionsCoating = queryLowerFull.contains("coat") || queryLowerFull.contains("bread") || queryLowerFull.contains("панировк")
                     val skinBonus = if (!queryMentionsSkin && (queryLowerFull.contains("chicken") || queryLowerFull.contains("turkey") || queryLowerFull.contains("breast") || queryLowerFull.contains("thigh"))) {
                         when {
                             desc.contains("skinless") || desc.contains("meat only") || desc.contains("without skin") -> 60
-                            desc.contains("skin eaten") || desc.contains("skin not eaten") || desc.contains("with skin") -> -40
+                            desc.contains("skin not eaten") || desc.contains("coating not eaten") -> 40
+                            desc.contains("skin eaten") || desc.contains("with skin") -> -40
                             else -> 0
                         }
                     } else 0
+                    // Penalize coated/breaded entries when user didn't ask for coating
+                    val coatedPenalty = if (!queryMentionsCoating && desc.contains("coated")) -50 else 0
                     // Prefer entries where description closely matches query length (penalize very long descriptions)
                     val descWords = desc.split("\\W+".toRegex()).filter { it.length >= 3 }
                     val lengthPenalty = if (descWords.size > queryWords.size * 3) -20 else 0
@@ -714,7 +750,7 @@ Rules:
                         desc.contains(",") && desc.indexOf(",") <= desc.length / 2 -> 15
                         else -> 0
                     }
-                    return typePriority + wordMatchBonus + plainBonus + recipePenalty + derivativePenalty + categoryPenalty + skinBonus + lengthPenalty + startsWithBonus + commaFormatBonus
+                    return typePriority + wordMatchBonus + plainBonus + recipePenalty + derivativePenalty + categoryPenalty + skinBonus + coatedPenalty + lengthPenalty + startsWithBonus + commaFormatBonus
                 }
                 // Log all candidates for debugging
                 Log.d("Repository", "USDA query='${item.foodNameEn}', mainWord='$mainWord', ${foodsWithCalories.size} candidates:")
@@ -1680,16 +1716,24 @@ Return ONLY a JSON object with these fields:
             basePer100g
         }
 
-        // 4. Cache the enriched result
+        // 5. Enrich fat details if mono/poly are missing
+        val fatEnrichedPer100g = try {
+            enrichFatDetailsIfNeeded(enrichedPer100g, name, null)
+        } catch (e: Exception) {
+            Log.w("Repository", "Fat enrichment failed for barcode $barcode: ${e.message}")
+            enrichedPer100g
+        }
+
+        // 6. Cache the enriched result
         try {
-            saveToCache(name, name, enrichedPer100g)
-            saveToCache("barcode:$barcode", name, enrichedPer100g)
+            saveToCache(name, name, fatEnrichedPer100g)
+            saveToCache("barcode:$barcode", name, fatEnrichedPer100g)
             Log.d("Repository", "Cached enriched barcode $barcode as '$name'")
         } catch (e: Exception) {
             Log.w("Repository", "Failed to cache barcode: ${e.message}")
         }
 
-        return Triple(name, enrichedPer100g, false)
+        return Triple(name, fatEnrichedPer100g, false)
     }
 
     // --- Supplement (BAD) barcode lookup ---
