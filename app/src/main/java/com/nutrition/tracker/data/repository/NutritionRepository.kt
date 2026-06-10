@@ -521,6 +521,16 @@ Rules:
 - "чай зелений" / "чай зеленый" → "green tea brewed"
 - "шарлотка" → "apple sponge cake"
 - "запіканка" / "запеканка" → "cottage cheese casserole"
+- "черешня" / "черешні" → "sweet cherry raw"
+- "вишня" / "вишні" → "sour cherry raw"
+- "клубника" / "полуниця" → "strawberry raw"
+- "малина" / "малини" → "raspberry raw"
+- "голубика" / "лохина" → "blueberry raw"
+- "смородина" → "currant raw"
+- "абрикос" / "абрикоси" → "apricot raw"
+- "персик" / "персики" → "peach raw"
+- "слива" / "сливи" → "plum raw"
+- "виноград" → "grape raw"
 
 ВАЖНО для составных блюд (салаты, супы):
 - НЕ перечисляй все ингредиенты в food_name_en — используй КОРОТКОЕ узнаваемое название
@@ -631,6 +641,14 @@ Rules:
                     f.foodNutrients?.any { it.nutrientId == UsdaFoodNutrient.ENERGY && (it.value ?: 0.0) > 0 } == true
                         && isRelevant(f.description)
                 } ?: emptyList()
+                // Helper: generate plural forms for a word (handles regular + y→ies)
+                fun plurals(word: String): List<String> {
+                    val forms = mutableListOf(word, word + "s", word + "es")
+                    if (word.endsWith("y") && word.length > 2) {
+                        forms.add(word.dropLast(1) + "ies") // cherry→cherries, berry→berries
+                    }
+                    return forms
+                }
                 fun scoreFood(f: com.nutrition.tracker.data.api.UsdaFood): Int {
                     val desc = (f.description ?: "").lowercase()
                     // Data type priority (higher = better)
@@ -656,25 +674,47 @@ Rules:
                     }
                     // Penalize compound dish names (short descriptions with no comma = likely a recipe name)
                     val recipePenalty = if (f.dataType == "Survey (FNDDS)" && !desc.contains(",") && desc.split(" ").size <= 3) -40 else 0
+                    // Penalize derivative/composite products that contain dish-type words NOT in the query
+                    // e.g. "cherry turnover", "cherry pie", "cherry juice" when user just asked for "cherry"
+                    val dishTypeWords = setOf(
+                        "pie", "cake", "cobbler", "turnover", "crisp", "crumble", "tart", "strudel",
+                        "juice", "jam", "jelly", "preserve", "sauce", "syrup", "compote", "filling",
+                        "ice cream", "yogurt", "smoothie", "shake", "milkshake",
+                        "muffin", "scone", "bread", "cookie", "brownie", "pudding", "parfait",
+                        "dried", "candied", "glazed", "chocolate"
+                    )
+                    val queryLowerFull = item.foodNameEn.lowercase()
+                    val derivativePenalty = if (dishTypeWords.any { desc.contains(it) && !queryLowerFull.contains(it) }) -80 else 0
                     // Penalize Branded items that are a different product category
                     // e.g. "STRAWBERRY MILKSHAKE CEREAL" is a cereal, not a milkshake
                     val differentCategoryWords = listOf("cereal", "protein powder", "toaster pastries", "pastries", "ice cream", "candy", "bar", "cookie", "cookies", "gummies", "gummy", "supplement", "mix", "powder")
-                    val categoryPenalty = if (f.dataType == "Branded" && differentCategoryWords.any { desc.contains(it) && !item.foodNameEn.lowercase().contains(it) }) -100 else 0
+                    val categoryPenalty = if (f.dataType == "Branded" && differentCategoryWords.any { desc.contains(it) && !queryLowerFull.contains(it) }) -100 else 0
+                    // Skin handling for poultry: prefer "skinless"/"meat only" when query doesn't mention skin
+                    // Users in Eastern Europe typically mean skinless breast/thigh unless explicitly stated
+                    val queryMentionsSkin = queryLowerFull.contains("skin") || queryLowerFull.contains("with skin")
+                    val skinBonus = if (!queryMentionsSkin && (queryLowerFull.contains("chicken") || queryLowerFull.contains("turkey") || queryLowerFull.contains("breast") || queryLowerFull.contains("thigh"))) {
+                        when {
+                            desc.contains("skinless") || desc.contains("meat only") || desc.contains("without skin") -> 60
+                            desc.contains("skin eaten") || desc.contains("skin not eaten") || desc.contains("with skin") -> -40
+                            else -> 0
+                        }
+                    } else 0
                     // Prefer entries where description closely matches query length (penalize very long descriptions)
                     val descWords = desc.split("\\W+".toRegex()).filter { it.length >= 3 }
                     val lengthPenalty = if (descWords.size > queryWords.size * 3) -20 else 0
                     // Prefer entries where description STARTS with the query word (exact product, not a flavor)
                     // e.g. "MILKSHAKES, CHOCOLATE" vs "CHOCOLATE MILKSHAKE CEREAL"
-                    val startsWithBonus = if (mainWord != null && (desc.startsWith(mainWord) || desc.startsWith(mainWord + "s") || desc.startsWith(mainWord + "es"))) 40 else 0
+                    val mainWordPlurals = if (mainWord != null) plurals(mainWord) else emptyList()
+                    val startsWithBonus = if (mainWord != null && mainWordPlurals.any { desc.startsWith(it) }) 40 else 0
                     // Prefer entries with comma-separated format (USDA standard naming: "PRODUCT, VARIETY")
                     // Also prefer entries where the part before comma matches query (generic product)
                     val beforeComma = desc.substringBefore(",").trim()
                     val commaFormatBonus = when {
-                        desc.contains(",") && (beforeComma == mainWord || beforeComma == mainWord + "s" || beforeComma == mainWord + "es") -> 30
+                        desc.contains(",") && mainWord != null && mainWordPlurals.any { beforeComma == it } -> 30
                         desc.contains(",") && desc.indexOf(",") <= desc.length / 2 -> 15
                         else -> 0
                     }
-                    return typePriority + wordMatchBonus + plainBonus + recipePenalty + categoryPenalty + lengthPenalty + startsWithBonus + commaFormatBonus
+                    return typePriority + wordMatchBonus + plainBonus + recipePenalty + derivativePenalty + categoryPenalty + skinBonus + lengthPenalty + startsWithBonus + commaFormatBonus
                 }
                 // Log all candidates for debugging
                 Log.d("Repository", "USDA query='${item.foodNameEn}', mainWord='$mainWord', ${foodsWithCalories.size} candidates:")
