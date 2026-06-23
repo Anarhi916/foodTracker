@@ -314,7 +314,8 @@ For the food product "$foodNameEn" with total fat ${nutrients.fat}g per 100g, es
 Return ONLY a JSON object:
 {"saturated_fat": <grams>, "monounsaturated_fat": <grams>, "polyunsaturated_fat": <grams>, "cholesterol": <mg>}
 Rules:
-- saturated_fat + monounsaturated_fat + polyunsaturated_fat should approximately equal ${nutrients.fat}g (total fat)
+- CRITICAL: saturated_fat + monounsaturated_fat + polyunsaturated_fat MUST be <= ${nutrients.fat}g (total fat)
+- Each value must be >= 0 and individually less than total fat (${nutrients.fat}g)
 - cholesterol is in mg (milligrams), typical range 0-300mg per 100g
 - Use established nutritional data for this food
 """.trimIndent()
@@ -344,7 +345,25 @@ Rules:
             Log.w("Repository", "Fat enrichment failed for '$foodNameEn': ${e.message}")
         }
 
-        // --- Step 3: Sentinel — if mono/poly are still 0 after all sources, set 0.0001 to prevent re-enrichment ---
+        // --- Step 3: Validate fat breakdown does not exceed total fat ---
+        val totalFat = current.fat
+        val fatSum = current.saturatedFat + current.monounsaturatedFat + current.polyunsaturatedFat
+        if (fatSum > totalFat && totalFat > 0) {
+            val scale = totalFat / fatSum
+            current = current.copy(
+                saturatedFat = current.saturatedFat * scale,
+                monounsaturatedFat = current.monounsaturatedFat * scale,
+                polyunsaturatedFat = current.polyunsaturatedFat * scale
+            )
+        }
+        // Each component individually capped
+        current = current.copy(
+            saturatedFat = minOf(current.saturatedFat, totalFat),
+            monounsaturatedFat = minOf(current.monounsaturatedFat, totalFat),
+            polyunsaturatedFat = minOf(current.polyunsaturatedFat, totalFat)
+        )
+
+        // --- Step 4: Sentinel — if mono/poly are still 0 after all sources, set 0.0001 to prevent re-enrichment ---
         if (current.monounsaturatedFat == 0.0 && current.polyunsaturatedFat == 0.0) {
             current = current.copy(monounsaturatedFat = 0.0001, polyunsaturatedFat = 0.0001)
             Log.d("Repository", "Set sentinel for '$foodNameEn' — no sources provided mono/poly data")
