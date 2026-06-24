@@ -254,6 +254,138 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
         )
     }
 
+    // ─── Dairy fat % correction (ГОСТ standard) ────────────────────────────────
+    // For Russian/Ukrainian dairy products like "творог 5%", "молоко 2.5%", the
+    // percentage in the name means grams of fat per 100g of the final product.
+    // USDA doesn't index these grades and would pick a wrong variant (e.g. lowfat 2%
+    // for творог 5%, with understated protein), so we strip the % before USDA search
+    // and afterwards correct macros via a dedicated AI call.
+
+    /** Keywords for dairy products that follow the GOST X% = X g fat per 100g standard.
+     * Hard cheeses are excluded (their % is fat in dry matter, not in product). */
+    private val dairyWithFatPercentKeywords: List<String> = listOf(
+        "творог", "творожн", "сирок", "сырок", "сир знежирен", "сир нежирн", "сир кисломолочн",
+        "молоко", "сметана", "кефир", "ряженка", "ряжанка", "йогурт", "сливки", "вершки",
+        "простокваша", "ацидофилин", "айран", "тан", "мацони", "снежок", "бифидок"
+    )
+
+    /** Extracts the fat percentage from a product name ("творог 5%" → 5.0). */
+    private fun extractFatPercent(foodName: String): Double? {
+        val regex = Regex("""(\d+(?:[.,]\d+)?)\s*%""")
+        val match = regex.find(foodName) ?: return null
+        val raw = match.groupValues[1].replace(",", ".")
+        val percent = raw.toDoubleOrNull() ?: return null
+        if (percent < 0 || percent > 100) return null
+        return percent
+    }
+
+    /** Removes the fat % from a product name so we can search USDA for the base product.
+     * "cottage cheese 5%" → "cottage cheese", "молоко 2.5%" → "молоко". */
+    private fun stripFatPercent(foodName: String): String {
+        return foodName.replace(Regex("""\s*\d+(?:[.,]\d+)?\s*%\s*"""), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+    }
+
+    /** True if the name is a dairy product with an explicit fat % (GOST standard).
+     * Hard cheeses ("сыр 45%") return false — there % is fat in dry matter. */
+    private fun isDairyWithFatPercent(foodName: String): Boolean {
+        val lower = foodName.lowercase()
+        val isHardCheese = (lower.contains("сыр") || lower.contains("сир") ||
+                            (lower.contains("cheese") && !lower.contains("cottage")))
+                           && dairyWithFatPercentKeywords.none { lower.contains(it) }
+        if (isHardCheese) return false
+        if (dairyWithFatPercentKeywords.none { lower.contains(it) }) return false
+        return extractFatPercent(foodName) != null
+    }
+
+    /**
+     * Corrects PROTEIN/FAT/CARBS for a dairy product with an explicit % via an AI call.
+     * USDA returned data for a different fat grade (e.g. cottage cheese 2% for "творог 5%"),
+     * which understates the protein. We override macros using GOST/DSTU reference values
+     * provided to the AI through prompt examples; micronutrients from USDA are preserved.
+     */
+    private suspend fun correctDairyMacrosWithAI(
+        nutrients: NutrientData,
+        foodNameRu: String
+    ): NutrientData {
+        val percent = extractFatPercent(foodNameRu) ?: return nutrients
+
+        val prompt = """
+You are a professional nutritionist. The user entered a dairy product following the Russian/Ukrainian GOST standard, where the percentage in the name is grams of fat per 100g of the final product (NOT % of milkfat in the source milk, NOT USDA cottage cheese variants).
+
+Product: "$foodNameRu"
+Fat percentage from name: $percent% (= $percent g of fat per 100g)
+
+Return ONLY a JSON object with macronutrients PER 100 GRAMS of this product, according to GOST/DSTU reference data:
+{"protein": <g>, "fat": <g>, "carbs": <g>, "calories": <kcal>}
+
+Examples for calibration (per 100g):
+- "творог 0%": {"protein": 18.0, "fat": 0.0, "carbs": 1.8, "calories": 71}
+- "творог 5%": {"protein": 17.2, "fat": 5.0, "carbs": 1.8, "calories": 121}
+- "творог 9%": {"protein": 16.7, "fat": 9.0, "carbs": 2.0, "calories": 156}
+- "молоко 2.5%": {"protein": 2.9, "fat": 2.5, "carbs": 4.7, "calories": 52}
+- "сметана 20%": {"protein": 2.5, "fat": 20.0, "carbs": 3.2, "calories": 206}
+- "кефир 1%": {"protein": 2.8, "fat": 1.0, "carbs": 4.0, "calories": 37}
+- "йогурт 3.2%": {"protein": 5.0, "fat": 3.2, "carbs": 8.5, "calories": 82}
+
+The fat value MUST equal $percent. Calories MUST satisfy: protein*4 + fat*9 + carbs*4 ≈ calories.
+""".trimIndent()
+
+        return try {
+            val text = callOpenRouterWithRetry(
+                messages = listOf(OpenRouterMessage(role = "user", content = prompt)),
+                models = textModels
+            )
+            val json = extractJson(text)
+            val map = gson.fromJson(json, Map::class.java) as? Map<String, Any>
+            if (map == null) {
+                Log.w("Repository", "AI macro correction returned non-map for '$foodNameRu'")
+                return nutrients
+            }
+            fun num(key: String): Double? {
+                return when (val raw = map[key]) {
+                    is Number -> raw.toDouble()
+                    is String -> raw.toDoubleOrNull()
+                    else -> null
+                }
+            }
+            val protein = num("protein") ?: return nutrients
+            val fat = num("fat") ?: return nutrients
+            val carbs = num("carbs") ?: return nutrients
+            if (protein <= 0) {
+                Log.w("Repository", "AI macro correction returned invalid protein for '$foodNameRu'")
+                return nutrients
+            }
+
+            // Safety net: fat MUST match the percent from the name (AI sometimes drifts).
+            val finalFat = if (kotlin.math.abs(fat - percent) / kotlin.math.max(percent, 0.5) > 0.15) percent else fat
+            val rawCalories = num("calories") ?: (protein * 4 + fat * 9 + carbs * 4)
+            val finalCalories = if (kotlin.math.abs(finalFat - fat) > 0.01)
+                protein * 4 + finalFat * 9 + carbs * 4
+            else rawCalories
+
+            val oldFat = nutrients.fat
+            // Scale fat fractions proportionally to the new total fat.
+            val scale = if (oldFat > 0) finalFat / oldFat else 0.0
+            val corrected = nutrients.copy(
+                calories = finalCalories,
+                protein = protein,
+                fat = finalFat,
+                carbs = carbs,
+                saturatedFat = if (oldFat > 0) nutrients.saturatedFat * scale else nutrients.saturatedFat,
+                monounsaturatedFat = if (oldFat > 0) nutrients.monounsaturatedFat * scale else nutrients.monounsaturatedFat,
+                polyunsaturatedFat = if (oldFat > 0) nutrients.polyunsaturatedFat * scale else nutrients.polyunsaturatedFat,
+                cholesterol = if (oldFat > 0) nutrients.cholesterol * scale else nutrients.cholesterol
+            )
+            Log.d("Repository", "AI macro correction for '$foodNameRu': protein ${nutrients.protein}→$protein, fat $oldFat→$finalFat, carbs ${nutrients.carbs}→$carbs")
+            corrected
+        } catch (e: Exception) {
+            Log.w("Repository", "AI macro correction failed for '$foodNameRu': ${e.message}")
+            nutrients
+        }
+    }
+
     /**
      * Enriches fat details (saturated, mono, poly, cholesterol) for cached products
      * that have total fat > 0 but incomplete fat breakdown.
@@ -559,6 +691,30 @@ Rules:
 - "слива" / "сливи" → "plum raw"
 - "виноград" → "grape raw"
 
+ВАЖНО для свежих овощей/фруктов/ягод/зелени:
+Если продукт — свежий овощ, фрукт, ягода, зелень или листовой салат,
+и в названии НЕ указан способ приготовления (вареный/жареный/тушёный/печёный/квашеный/маринованный/сушёный и т.п.),
+обязательно добавь "raw" в food_name_en. USDA по умолчанию выдаёт салаты и обработанные варианты вместо свежего продукта.
+
+Примеры:
+- "капуста" → "cabbage raw"
+- "морковь" / "морква" → "carrot raw"
+- "яблоко" / "яблуко" → "apple raw"
+- "помидор" / "помідор" → "tomato raw"
+- "огурец" / "огірок" → "cucumber raw"
+- "лук" / "цибуля" → "onion raw"
+- "шпинат" → "spinach raw"
+- "банан" → "banana raw"
+- "брокколи" → "broccoli raw"
+- "перец болгарский" / "перець солодкий" → "bell pepper raw"
+
+НЕ добавляй "raw" для:
+- мяса/рыбы/птицы/яиц (без указания способа — подразумевается приготовленное)
+- круп, макарон, бобовых, хлеба
+- молочных продуктов, сыров, орехов, семян, масел
+- готовых блюд, консервов, продуктов прошедших обработку
+- если в названии уже есть способ приготовления или "сырой"/"свіжий"/"raw"/"fresh"
+
 ВАЖНО для составных блюд (салаты, супы):
 - НЕ перечисляй все ингредиенты в food_name_en — используй КОРОТКОЕ узнаваемое название
 - "салат з крабових паличок" / "салат из крабовых палочек" → "imitation crab salad"
@@ -618,9 +774,15 @@ Rules:
         for ((idx, item) in aiPending.withIndex()) {
             Log.d("Repository", "Processing: '${item.foodNameRu}' / '${item.foodNameEn}', weight=${item.weight}g")
             try {
+                // For dairy with explicit % fat (e.g. "творог 5%"), strip the percent from the
+                // English query — USDA doesn't index RU/UA fat grades, so we search the base
+                // product and later correct macros via AI.
+                val isDairyWithPercent = isDairyWithFatPercent(item.foodNameRu)
+                val foodNameEnForSearch = if (isDairyWithPercent) stripFatPercent(item.foodNameEn) else item.foodNameEn
+
                 // Strip negation phrases ("without X", "no X") — they describe ABSENCE
                 // of an ingredient and pollute USDA search (e.g. "without dressing" → matches dressings)
-                val negationCleaned = item.foodNameEn.replace(
+                val negationCleaned = foodNameEnForSearch.replace(
                     Regex("""\b(without|no|not|minus|free\s+from)\s+\w+""", RegexOption.IGNORE_CASE), ""
                 ).replace(Regex("\\s+"), " ").trim()
 
@@ -633,7 +795,7 @@ Rules:
                     continue
                 }
 
-                val usdaResult = usdaApi.searchFoods(query = negationCleaned.ifBlank { item.foodNameEn })
+                val usdaResult = usdaApi.searchFoods(query = negationCleaned.ifBlank { foodNameEnForSearch })
                 // Relevance filter: USDA description must contain the main food word
                 // This prevents "lightly salted salmon" matching "Almonds, lightly salted"
                 val queryWords = negationCleaned.lowercase().split("\\s+".toRegex())
@@ -1126,8 +1288,13 @@ Return ONLY a JSON object:
             }
 
             val per100g = item.nutrientsPer100g ?: continue
+            // For dairy with explicit %, override macros via AI using GOST reference data
+            // (USDA gave us micronutrients for the base product, but macros for the wrong fat grade).
+            val correctedPer100g = if (isDairyWithFatPercent(item.foodNameRu)) {
+                correctDairyMacrosWithAI(per100g, item.foodNameRu).also { item.nutrientsPer100g = it }
+            } else per100g
             try {
-                saveToCache(item.foodNameRu, item.foodNameEn, per100g)
+                saveToCache(item.foodNameRu, item.foodNameEn, correctedPer100g)
                 Log.d("Repository", "Cached '${item.foodNameRu}' / '${item.foodNameEn}'")
             } catch (e: Exception) {
                 Log.w("Repository", "Failed to cache '${item.foodNameRu}': ${e.message}")
@@ -1593,9 +1760,14 @@ Return ONLY a JSON object with these fields:
             selenium = v("selenium"), iodine = v("iodine")
         )
 
+        // For dairy with explicit %, override macros via AI using GOST reference data
+        val correctedPer100g = if (isDairyWithFatPercent(dishName)) {
+            correctDairyMacrosWithAI(per100g, dishName)
+        } else per100g
+
         // Cache it
         try {
-            saveToCache(dishName, nameEn, per100g)
+            saveToCache(dishName, nameEn, correctedPer100g)
             Log.d("Repository", "Cached single dish '$dishName' / '$nameEn'")
         } catch (e: Exception) {
             Log.w("Repository", "Failed to cache single dish: ${e.message}")
@@ -1606,7 +1778,7 @@ Return ONLY a JSON object with these fields:
             foodName = dishName,
             foodNameEn = nameEn,
             weightGrams = weightGrams,
-            nutrients = per100g * factor,
+            nutrients = correctedPer100g * factor,
             fromCache = false
         )
     }

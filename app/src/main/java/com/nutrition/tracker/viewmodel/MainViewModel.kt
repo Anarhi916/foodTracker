@@ -543,6 +543,53 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun createCustomDish(
+        name: String,
+        ingredients: List<Triple<String, Double, FoodCacheEntity?>>,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                var total = NutrientData()
+                var totalWeight = 0.0
+                for ((ingName, ingWeight, cached) in ingredients) {
+                    val trimmed = ingName.trim()
+                    if (trimmed.isEmpty() || ingWeight <= 0) continue
+                    if (cached != null) {
+                        val per100g = com.google.gson.Gson().fromJson(cached.nutrientsPer100gJson, NutrientData::class.java)
+                        total = total + per100g * (ingWeight / 100.0)
+                    } else {
+                        val weightStr = if (ingWeight % 1.0 == 0.0) "${ingWeight.toInt()}г" else "${ingWeight}г"
+                        val query = "$trimmed $weightStr"
+                        val results = try {
+                            repo.analyzeFoodText(query)
+                        } catch (e: Exception) {
+                            onError("Не удалось распознать «$trimmed»: ${e.message ?: ""}")
+                            return@launch
+                        }
+                        if (results.isEmpty()) {
+                            onError("Не удалось распознать «$trimmed»")
+                            return@launch
+                        }
+                        for (r in results) total = total + r.nutrients
+                    }
+                    totalWeight += ingWeight
+                }
+                if (totalWeight <= 0) {
+                    onError("Сумма весов ингредиентов должна быть больше 0")
+                    return@launch
+                }
+                val per100g = total * (100.0 / totalWeight)
+                val trimmedName = name.trim()
+                repo.addManualCachedFood(trimmedName, trimmedName, per100g)
+                onSuccess()
+            } catch (e: Exception) {
+                onError(e.message ?: "Ошибка создания блюда")
+            }
+        }
+    }
+
     fun addCachedFoodToToday(entry: FoodCacheEntity, weightGrams: Double) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)

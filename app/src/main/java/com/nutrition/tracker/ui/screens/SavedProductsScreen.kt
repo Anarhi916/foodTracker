@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nutrition.tracker.data.db.FoodCacheEntity
 import com.nutrition.tracker.data.model.NutrientData
+import com.nutrition.tracker.util.transliterateToLatin
 import com.nutrition.tracker.viewmodel.MainViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -39,6 +40,8 @@ fun SavedProductsScreen(
     var editNameRu by remember { mutableStateOf("") }
     var editNameEn by remember { mutableStateOf("") }
     var showAddDialog by remember { mutableStateOf(false) }
+    var showAddTypeChooser by remember { mutableStateOf(false) }
+    var showAddDishDialog by remember { mutableStateOf(false) }
     var quickAddEntry by remember { mutableStateOf<FoodCacheEntity?>(null) }
     var quickAddWeight by remember { mutableStateOf("100") }
     var searchQuery by remember { mutableStateOf("") }
@@ -241,6 +244,36 @@ fun SavedProductsScreen(
         )
     }
 
+    // Add type chooser: Product or Dish
+    if (showAddTypeChooser) {
+        AlertDialog(
+            onDismissRequest = { showAddTypeChooser = false },
+            title = { Text("Что добавить?") },
+            text = { Text("Единичный продукт или блюдо из нескольких ингредиентов?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showAddTypeChooser = false
+                    showAddDishDialog = true
+                }) { Text("Блюдо") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showAddTypeChooser = false
+                    showAddDialog = true
+                }) { Text("Продукт") }
+            }
+        )
+    }
+
+// Custom dish dialog (from ingredients)
+    if (showAddDishDialog) {
+        AddCustomDishDialog(
+            viewModel = viewModel,
+            cachedFoods = cachedFoods,
+            onDismiss = { showAddDishDialog = false }
+        )
+    }
+
     // Add new product dialog
     if (showAddDialog) {
         var addNameRu by remember { mutableStateOf("") }
@@ -312,8 +345,8 @@ fun SavedProductsScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { showAddDialog = true }) {
-                        Icon(Icons.Default.Add, contentDescription = "Добавить продукт",
+                    IconButton(onClick = { showAddTypeChooser = true }) {
+                        Icon(Icons.Default.Add, contentDescription = "Добавить",
                             tint = MaterialTheme.colorScheme.onPrimary)
                     }
                     if (cachedFoods.isNotEmpty()) {
@@ -478,4 +511,245 @@ fun SavedProductsScreen(
         }
         } // Box
     }
+}
+
+private data class IngredientInput(
+    val id: Long = System.nanoTime(),
+    val name: String = "",
+    val weight: String = "",
+    val cachedFood: FoodCacheEntity? = null
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AddCustomDishDialog(
+    viewModel: MainViewModel,
+    cachedFoods: List<FoodCacheEntity>,
+    onDismiss: () -> Unit
+) {
+    var dishName by remember { mutableStateOf("") }
+    var ingredients by remember { mutableStateOf(listOf(IngredientInput())) }
+    var isProcessing by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    val canSave = dishName.isNotBlank() && ingredients.any {
+        it.name.isNotBlank() && (it.weight.replace(",", ".").toDoubleOrNull() ?: 0.0) > 0
+    } && !isProcessing
+
+    AlertDialog(
+        onDismissRequest = { if (!isProcessing) onDismiss() },
+        title = { Text("Новое блюдо") },
+        text = {
+            Column(modifier = Modifier.heightIn(max = 500.dp)) {
+                OutlinedTextField(
+                    value = dishName,
+                    onValueChange = { dishName = it },
+                    label = { Text("Название блюда *") },
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                    maxLines = 3
+                )
+                Text(
+                    "Ингредиенты",
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.weight(1f, fill = false)
+                ) {
+                    items(ingredients.size) { idx ->
+                        val ing = ingredients[idx]
+                        val isLast = idx == ingredients.lastIndex
+
+                        val suggestions = remember(ing.name, cachedFoods) {
+                            if (ing.name.length < 2 || ing.cachedFood != null) emptyList()
+                            else {
+                                val q = ing.name.lowercase()
+                                val qTranslit = transliterateToLatin(q)
+                                cachedFoods.filter {
+                                    it.keyOriginal.lowercase().contains(q) ||
+                                    it.keyEn.lowercase().contains(q) ||
+                                    it.keyOriginal.lowercase().contains(qTranslit) ||
+                                    it.keyEn.lowercase().contains(qTranslit)
+                                }.take(5)
+                            }
+                        }
+
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                OutlinedTextField(
+                                    value = ing.name,
+                                    onValueChange = { newName ->
+                                        ingredients = ingredients.toMutableList().also {
+                                            it[idx] = it[idx].copy(name = newName, cachedFood = null)
+                                        }
+                                    },
+                                    label = {
+                                        Text(if (ing.cachedFood != null) "Из кеша" else "Ингредиент")
+                                    },
+                                    singleLine = true,
+                                    modifier = Modifier.weight(1f),
+                                    colors = if (ing.cachedFood != null) OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                        unfocusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                                        focusedLabelColor = MaterialTheme.colorScheme.primary,
+                                        unfocusedLabelColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                                    ) else OutlinedTextFieldDefaults.colors()
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                OutlinedTextField(
+                                    value = ing.weight,
+                                    onValueChange = { newW ->
+                                        ingredients = ingredients.toMutableList().also {
+                                            it[idx] = it[idx].copy(weight = newW)
+                                        }
+                                    },
+                                    label = { Text("г") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                    singleLine = true,
+                                    modifier = Modifier.width(80.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                if (isLast) {
+                                    IconButton(
+                                        onClick = { ingredients = ingredients + IngredientInput() },
+                                        enabled = !isProcessing
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Add,
+                                            contentDescription = "Добавить ингредиент",
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                } else {
+                                    IconButton(
+                                        onClick = {
+                                            ingredients = ingredients.filterIndexed { i, _ -> i != idx }
+                                                .ifEmpty { listOf(IngredientInput()) }
+                                        },
+                                        enabled = !isProcessing
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Close,
+                                            contentDescription = "Удалить",
+                                            tint = MaterialTheme.colorScheme.error
+                                        )
+                                    }
+                                }
+                            }
+
+                            if (suggestions.isNotEmpty()) {
+                                Card(
+                                    modifier = Modifier.fillMaxWidth().padding(end = 44.dp),
+                                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                                    )
+                                ) {
+                                    Column {
+                                        suggestions.forEach { entry ->
+                                            val nutrients = try {
+                                                com.google.gson.Gson().fromJson(entry.nutrientsPer100gJson, NutrientData::class.java)
+                                            } catch (_: Exception) { NutrientData() }
+                                            Surface(
+                                                onClick = {
+                                                    ingredients = ingredients.toMutableList().also {
+                                                        it[idx] = it[idx].copy(
+                                                            name = entry.keyOriginal,
+                                                            cachedFood = entry
+                                                        )
+                                                    }
+                                                },
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Column(modifier = Modifier.weight(1f)) {
+                                                        Text(
+                                                            entry.keyOriginal,
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis
+                                                        )
+                                                        Text(
+                                                            "%.0f ккал • Б%.1f Ж%.1f У%.1f /100г".format(
+                                                                nutrients.calories, nutrients.protein,
+                                                                nutrients.fat, nutrients.carbs
+                                                            ),
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                            if (entry != suggestions.last()) HorizontalDivider()
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (errorMessage != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        errorMessage!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+
+                if (isProcessing) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Анализ ингредиентов...", style = MaterialTheme.typography.bodySmall)
+                    }
+                } else {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "Нутриенты будут рассчитаны автоматически по составу.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val valid = ingredients.mapNotNull { ing ->
+                        val n = ing.name.trim()
+                        val w = ing.weight.replace(",", ".").toDoubleOrNull() ?: 0.0
+                        if (n.isNotEmpty() && w > 0) Triple(n, w, ing.cachedFood) else null
+                    }
+                    if (dishName.isBlank() || valid.isEmpty()) return@TextButton
+                    isProcessing = true
+                    errorMessage = null
+                    viewModel.createCustomDish(
+                        name = dishName.trim(),
+                        ingredients = valid,
+                        onSuccess = {
+                            isProcessing = false
+                            onDismiss()
+                        },
+                        onError = { msg ->
+                            isProcessing = false
+                            errorMessage = msg
+                        }
+                    )
+                },
+                enabled = canSave
+            ) { Text("Создать") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !isProcessing) { Text("Отмена") }
+        }
+    )
 }
