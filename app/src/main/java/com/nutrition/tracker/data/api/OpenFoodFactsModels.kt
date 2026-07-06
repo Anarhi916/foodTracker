@@ -11,6 +11,8 @@ data class OpenFoodFactsResponse(
 data class OFFProduct(
     @SerializedName("product_name") val productName: String? = null,
     @SerializedName("product_name_en") val productNameEn: String? = null,
+    @SerializedName("product_name_ru") val productNameRu: String? = null,
+    @SerializedName("product_name_uk") val productNameUk: String? = null,
     @SerializedName("brands") val brands: String? = null,
     val nutriments: OFFNutriments? = null,
     @SerializedName("serving_size") val servingSize: String? = null,

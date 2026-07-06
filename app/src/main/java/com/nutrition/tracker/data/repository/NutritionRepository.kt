@@ -707,6 +707,37 @@ Rules:
 - "банан" → "banana raw"
 - "брокколи" → "broccoli raw"
 - "перец болгарский" / "перець солодкий" → "bell pepper raw"
+- "свекла" / "буряк" / "свёкла" → "beet raw"
+- "репа" / "ріпа" → "turnip raw"
+- "редька" / "редька чёрная" → "radish raw"
+- "тыква" / "гарбуз" → "pumpkin raw"
+- "кабачок" / "цукіні" → "zucchini raw"
+- "баклажан" → "eggplant raw"
+- "сельдерей" / "селера" → "celery raw"
+- "петрушка" / "петрушка свіжа" → "parsley raw"
+- "укроп" / "кріп" → "dill raw"
+- "виноград" → "grapes raw"
+- "черешня" / "черешні" → "sweet cherry raw"
+- "вишня" / "вишні" → "sour cherry raw"
+- "черника" / "чорниця" → "blueberry raw"
+- "голубика" / "лохина" → "blueberry raw"
+- "смородина чёрная" / "чорна смородина" → "blackcurrant raw"
+- "смородина красная" / "червона смородина" → "redcurrant raw"
+- "кукуруза" / "кукурудза" → "corn raw"
+- "горох свежий" / "горох" → "peas raw"
+- "фасоль стручковая" / "зелена квасоля" → "green beans raw"
+- "цветная капуста" / "цвітна капуста" → "cauliflower raw"
+- "авокадо" → "avocado raw"
+- "ананас" → "pineapple raw"
+- "манго" → "mango raw"
+- "киви" → "kiwi raw"
+
+ВАЖНО для USDA — используй АМЕРИКАНСКИЙ английский, не британский:
+- "beet", НЕ "beetroot" (beetroot = только чипсы в USDA)
+- "eggplant", НЕ "aubergine"
+- "zucchini", НЕ "courgette"
+- "cilantro", НЕ "coriander" (для зелени)
+- "bell pepper", НЕ "capsicum"
 
 НЕ добавляй "raw" для:
 - мяса/рыбы/птицы/яиц (без указания способа — подразумевается приготовленное)
@@ -778,7 +809,21 @@ Rules:
                 // English query — USDA doesn't index RU/UA fat grades, so we search the base
                 // product and later correct macros via AI.
                 val isDairyWithPercent = isDairyWithFatPercent(item.foodNameRu)
-                val foodNameEnForSearch = if (isDairyWithPercent) stripFatPercent(item.foodNameEn) else item.foodNameEn
+                val foodNameEnForSearch = run {
+                    var name = if (isDairyWithPercent) stripFatPercent(item.foodNameEn) else item.foodNameEn
+                    // Normalise British English → American English so USDA finds the right entry
+                    val britishToAmerican = listOf(
+                        "beetroot" to "beet", "aubergine" to "eggplant", "courgette" to "zucchini",
+                        "coriander leaf" to "cilantro", "capsicum" to "bell pepper",
+                        "rocket" to "arugula", "mangetout" to "snow peas", "swede" to "rutabaga",
+                        "broad bean" to "fava bean", "chickpea" to "garbanzo bean",
+                        "maize" to "corn", "prawn" to "shrimp"
+                    )
+                    for ((british, american) in britishToAmerican) {
+                        name = name.replace(british, american, ignoreCase = true)
+                    }
+                    name
+                }
 
                 // Strip negation phrases ("without X", "no X") — they describe ABSENCE
                 // of an ingredient and pollute USDA search (e.g. "without dressing" → matches dressings)
@@ -808,9 +853,12 @@ Rules:
                     "hot", "cold", "warm", "thick", "thin", "light", "heavy",
                     "homemade", "instant", "regular", "plain", "with", "without"
                 )
+                // Exclude color/size adjectives from mainWord so "green beans" → mainWord="beans", not "green"
+                val genericModifiers = setOf("green", "red", "yellow", "white", "black", "purple", "orange", "blue", "pink", "dark", "light", "large", "small", "baby", "mini", "giant", "sweet", "sour", "bitter", "wild")
                 val mainWord = queryWords
-                    .filter { it !in cookingTerms }
+                    .filter { it !in cookingTerms && it !in genericModifiers }
                     .maxByOrNull { it.length }
+                    ?: queryWords.filter { it !in cookingTerms }.maxByOrNull { it.length }
                     ?: queryWords.maxByOrNull { it.length } // fallback if all words are cooking terms
                 val secondaryWords = queryWords.filter { it != mainWord }
                 // Generate stem-like forms for matching (cherry↔cherries, potato↔potatoes, berry↔berries)
@@ -862,29 +910,34 @@ Rules:
                 }
                 fun scoreFood(f: com.nutrition.tracker.data.api.UsdaFood): Int {
                     val desc = (f.description ?: "").lowercase()
-                    // Data type priority (higher = better)
+                    val queryAsksRaw = queryWords.contains("raw")
+                    val queryAsksCooked = queryWords.any { it in setOf("porridge", "cooked", "boiled", "steamed", "stewed", "braised", "baked", "fried", "grilled", "roasted") }
+                    // For "raw" queries SR Legacy lab data is more reliable than FNDDS dietary surveys
                     val typePriority = when (f.dataType) {
-                        "Survey (FNDDS)" -> 200
-                        "SR Legacy" -> 150
+                        "Survey (FNDDS)" -> if (queryAsksRaw) 160 else 200
+                        "SR Legacy" -> if (queryAsksRaw) 190 else 150
+                        "Foundation" -> if (queryAsksRaw) 170 else 130
                         "Branded" -> 50
                         else -> 100
                     }
                     // Word match count bonus (each matching word = +30)
                     val wordMatchBonus = queryWords.count { descContainsWord(desc, it) } * 30
-                    // Prefer generic/plain entries over recipes/mixed dishes
-                    // If query implies cooking (porridge, boiled, cooked), prefer cooked entries
-                    val queryImpliesCooked = queryWords.any { it in setOf("porridge", "cooked", "boiled", "steamed", "stewed", "braised", "baked", "fried", "grilled", "roasted") }
                     // "from raw" means cooked starting from raw state — NOT actually raw
                     val isActuallyRaw = desc.contains("raw") && !desc.contains("from raw")
                     val plainBonus = when {
-                        desc.contains(", nfs") -> 25       // "Not Further Specified" = generic average
-                        queryImpliesCooked && desc.contains("cooked") -> 30  // prefer cooked when query implies it
-                        queryImpliesCooked && isActuallyRaw -> -20    // penalize raw when query implies cooked
-                        !queryImpliesCooked && isActuallyRaw -> 20    // raw = plain product (only when not cooking)
-                        desc.startsWith("fish,") || desc.startsWith("fish ") -> 15 // USDA standard fish entry
+                        desc.contains(", nfs") -> 25
+                        queryAsksCooked && desc.contains("cooked") -> 30
+                        queryAsksCooked && isActuallyRaw -> -20
+                        !queryAsksCooked && isActuallyRaw -> 20
+                        desc.startsWith("fish,") || desc.startsWith("fish ") -> 15
                         desc.contains("salted") || desc.contains("smoked") || desc.contains("canned") -> 10
                         else -> 0
                     }
+                    // Penalize processing state mismatch: query asks raw but entry is pickled/canned/dried etc.
+                    val processingMismatch = if (queryAsksRaw) {
+                        val processedTerms = listOf("pickled", "canned", "dried", "dehydrated", "smoked", "frozen", "baked", "fried", "cooked", "roasted", "candied", "glazed", "salted", "chips", "crisps", "powder", "flakes", "juice")
+                        if (processedTerms.any { desc.contains(it) }) -120 else 0
+                    } else 0
                     // Penalize compound dish names (short descriptions with no comma = likely a recipe name)
                     val recipePenalty = if (f.dataType == "Survey (FNDDS)" && !desc.contains(",") && desc.split(" ").size <= 3) -40 else 0
                     // Penalize derivative/composite products that contain dish-type words NOT in the query
@@ -894,7 +947,8 @@ Rules:
                         "juice", "jam", "jelly", "preserve", "sauce", "syrup", "compote", "filling",
                         "ice cream", "yogurt", "smoothie", "shake", "milkshake",
                         "muffin", "scone", "bread", "cookie", "brownie", "pudding", "parfait",
-                        "dried", "candied", "glazed", "chocolate"
+                        "dried", "candied", "glazed", "chocolate",
+                        "oil", "butter", "lard", "ghee", "margarine"
                     )
                     val queryLowerFull = item.foodNameEn.lowercase()
                     val derivativePenalty = if (dishTypeWords.any { desc.contains(it) && !queryLowerFull.contains(it) }) -80 else 0
@@ -920,18 +974,36 @@ Rules:
                     val descWords = desc.split("\\W+".toRegex()).filter { it.length >= 3 }
                     val lengthPenalty = if (descWords.size > queryWords.size * 3) -20 else 0
                     // Prefer entries where description STARTS with the query word (exact product, not a flavor)
-                    // e.g. "MILKSHAKES, CHOCOLATE" vs "CHOCOLATE MILKSHAKE CEREAL"
                     val mainWordPlurals = if (mainWord != null) plurals(mainWord) else emptyList()
                     val startsWithBonus = if (mainWord != null && mainWordPlurals.any { desc.startsWith(it) }) 40 else 0
                     // Prefer entries with comma-separated format (USDA standard naming: "PRODUCT, VARIETY")
-                    // Also prefer entries where the part before comma matches query (generic product)
                     val beforeComma = desc.substringBefore(",").trim()
                     val commaFormatBonus = when {
                         desc.contains(",") && mainWord != null && mainWordPlurals.any { beforeComma == it } -> 30
                         desc.contains(",") && desc.indexOf(",") <= desc.length / 2 -> 15
                         else -> 0
                     }
-                    return typePriority + wordMatchBonus + plainBonus + recipePenalty + derivativePenalty + categoryPenalty + skinBonus + coatedPenalty + lengthPenalty + startsWithBonus + commaFormatBonus
+                    // Penalize partial-product entries (e.g. "Potatoes, raw, skin" vs "Potatoes, flesh and skin, raw")
+                    val partWords = listOf("skin", "peel", "rind", "pit", "seed", "leaves", "tops", "pulp")
+                    val queryMentionsPart = partWords.any { queryLowerFull.contains(it) }
+                    val partialProductPenalty = if (!queryMentionsPart) {
+                        val isWhole = desc.contains("flesh and skin") || desc.contains("includes skin") || desc.contains("with skin") || desc.contains("whole")
+                        if (partWords.any { desc.contains(it) } && !isWhole) -60 else 0
+                    } else 0
+                    // Prefer generic entries over variety-specific ones when query has no color/variety qualifier.
+                    // e.g. "tomato raw" → prefer "Tomatoes, raw" over "Tomatoes, green, raw"
+                    // e.g. "grapes raw" → prefer "Grapes, raw" over "Grapes, muscadine, raw"
+                    val varietyPenalty = run {
+                        val queryHasVariety = queryWords.any { it in genericModifiers || it.length > 7 }
+                        if (!queryHasVariety) {
+                            val parts = desc.split(",").map { it.trim() }
+                            val extraParts = parts.drop(1).filter { p ->
+                                queryWords.none { descContainsWord(p, it) } && p != "raw" && p != "nfs"
+                            }
+                            if (parts.size >= 3 && extraParts.isNotEmpty()) -30 else 0
+                        } else 0
+                    }
+                    return typePriority + wordMatchBonus + plainBonus + processingMismatch + recipePenalty + derivativePenalty + categoryPenalty + skinBonus + coatedPenalty + lengthPenalty + startsWithBonus + commaFormatBonus + partialProductPenalty + varietyPenalty
                 }
                 // Log all candidates for debugging
                 Log.d("Repository", "USDA query='${item.foodNameEn}', mainWord='$mainWord', ${foodsWithCalories.size} candidates:")
@@ -1823,7 +1895,8 @@ Return ONLY a JSON object with these fields:
         return try {
             val response = offApi.getProduct(barcode)
             val product = response.product ?: return null
-            val name = product.productName ?: product.productNameEn ?: product.brands ?: "Неизвестный продукт"
+            val name = listOf(product.productNameRu, product.productNameUk, product.productNameEn, product.productName, product.brands)
+                .firstOrNull { !it.isNullOrBlank() } ?: "Неизвестный продукт"
             val n = product.nutriments ?: return Pair(name, NutrientData())
             // OFF API returns values per 100g in standard units (kcal, g, mg, mcg)
             val per100g = NutrientData(
@@ -1980,10 +2053,8 @@ Return ONLY a JSON object with these fields:
         return try {
             val response = offApi.getProduct(barcode)
             val product = response.product ?: return null
-            val name = product.productName
-                ?: product.productNameEn
-                ?: product.brands
-                ?: "Dietary supplement (barcode: $barcode)"
+            val name = listOf(product.productNameRu, product.productNameUk, product.productNameEn, product.productName, product.brands)
+                .firstOrNull { !it.isNullOrBlank() } ?: "Dietary supplement (barcode: $barcode)"
             val servingSize = product.servingSize ?: "1 порция"
 
             // 3. AI determines accurate per-serving nutrients

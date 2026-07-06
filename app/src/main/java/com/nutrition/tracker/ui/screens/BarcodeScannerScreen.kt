@@ -17,8 +17,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -50,6 +52,7 @@ fun BarcodeScannerScreen(
     }
 
     var scanned by remember { mutableStateOf(false) }
+    var readyToScan by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -87,12 +90,17 @@ fun BarcodeScannerScreen(
                                 .build()
                                 .also { analysis ->
                                     analysis.setAnalyzer(ContextCompat.getMainExecutor(ctx)) { imageProxy ->
-                                        processBarcode(imageProxy) { barcode ->
-                                            if (!scanned) {
-                                                scanned = true
-                                                onBarcodeScanned(barcode)
-                                                onBack()
+                                        if (readyToScan) {
+                                            processBarcode(imageProxy) { barcode ->
+                                                if (!scanned) {
+                                                    scanned = true
+                                                    readyToScan = false
+                                                    onBarcodeScanned(barcode)
+                                                    onBack()
+                                                }
                                             }
+                                        } else {
+                                            imageProxy.close()
                                         }
                                     }
                                 }
@@ -115,22 +123,39 @@ fun BarcodeScannerScreen(
                     modifier = Modifier.fillMaxSize()
                 )
 
-                // Overlay
-                Card(
+                // Viewfinder frame
+                Box(modifier = Modifier.align(Alignment.Center)) {
+                    Surface(
+                        modifier = Modifier.size(width = 260.dp, height = 160.dp),
+                        color = Color.Transparent,
+                        shape = MaterialTheme.shapes.medium,
+                        border = BorderStroke(
+                            width = 3.dp,
+                            color = if (readyToScan) MaterialTheme.colorScheme.primary else Color.White
+                        )
+                    ) {}
+                }
+
+                // Scan button
+                Button(
+                    onClick = { readyToScan = true },
+                    enabled = !readyToScan,
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .padding(16.dp)
-                        .fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                        .padding(bottom = 48.dp)
+                        .fillMaxWidth()
+                        .padding(horizontal = 32.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (readyToScan) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
                     )
                 ) {
                     Text(
-                        "Наведите камеру на штрих-код продукта",
-                        modifier = Modifier.padding(16.dp),
-                        style = MaterialTheme.typography.bodyLarge
+                        text = if (readyToScan) "Наведите на штрих-код…" else "Сканировать",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(vertical = 4.dp)
                     )
                 }
+
             } else {
                 Column(
                     modifier = Modifier.fillMaxSize(),

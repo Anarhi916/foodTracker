@@ -269,18 +269,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val name = state.barcodeProductName ?: return
         val per100g = state.barcodeNutrientsPer100g ?: return
         val weight = state.barcodeWeight.toDoubleOrNull() ?: return
-        val factor = weight / 100.0
-        val nutrients = per100g * factor
+        val nutrients = per100g * (weight / 100.0)
 
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(
-                showBarcodeWeightDialog = false,
-                barcodeProductName = null,
-                barcodeNutrientsPer100g = null
-            )
-            // Already enriched and cached in lookupBarcodeWithCache
-            repo.addFoodEntry(name, weight, nutrients, state.weightDialogSource, fromCache = true)
-        }
+        _uiState.value = _uiState.value.copy(
+            showBarcodeWeightDialog = false,
+            barcodeProductName = null,
+            barcodeNutrientsPer100g = null,
+            pendingFood = FoodAnalysisResult(
+                foodName = name,
+                foodNameEn = name,
+                weightGrams = weight,
+                nutrients = nutrients,
+                fromCache = true
+            ),
+            pendingFoodWeight = weight,
+            pendingFoodSource = state.weightDialogSource,
+            showConfirmDialog = true
+        )
     }
 
     fun dismissBarcodeDialog() {
