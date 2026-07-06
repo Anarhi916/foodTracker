@@ -559,6 +559,239 @@ Rules:
         }.filter { it.first.isNotBlank() }
     }
 
+    // ─── AI-driven USDA candidate selection ─────────────────────────────────
+    // Instead of a hand-tuned scoreFood() heuristic, we ask the AI to pick the
+    // best USDA hit for the query. The AI sees only a compact candidate list
+    // (fdcId + description + dataType + macros) and returns a single fdcId —
+    // nutrient values are still taken from the USDA JSON, so the model cannot
+    // "invent" data from its own sources.
+
+    /** Compact form of a USDA hit used to build the AI selection prompt. */
+    private data class UsdaCandidateBrief(
+        val fdcId: Int,
+        val description: String,
+        val dataType: String,
+        val calories: Double,
+        val protein: Double,
+        val fat: Double,
+        val carbs: Double
+    )
+
+    private fun usdaCandidateBrief(f: UsdaFood): UsdaCandidateBrief? {
+        val id = f.fdcId ?: return null
+        val nMap = mutableMapOf<Int, Double>()
+        for (fn in f.foodNutrients ?: emptyList()) {
+            if (fn.nutrientId != null && fn.value != null) nMap[fn.nutrientId] = fn.value
+        }
+        val cal = nMap[UsdaFoodNutrient.ENERGY] ?: 0.0
+        if (cal <= 0.0) return null
+        return UsdaCandidateBrief(
+            fdcId = id,
+            description = f.description ?: "",
+            dataType = f.dataType ?: "",
+            calories = cal,
+            protein = nMap[UsdaFoodNutrient.PROTEIN] ?: 0.0,
+            fat = nMap[UsdaFoodNutrient.FAT] ?: 0.0,
+            carbs = nMap[UsdaFoodNutrient.CARBS] ?: 0.0
+        )
+    }
+
+    /**
+     * Ask the AI to pick the best USDA candidate for a query.
+     * Returns the chosen fdcId, or null if no candidate is a good match.
+     * The returned id is verified against the candidate list to guard against hallucinated IDs.
+     */
+    private suspend fun askAiToPickUsdaCandidate(
+        queryRu: String,
+        queryEn: String,
+        candidates: List<UsdaCandidateBrief>
+    ): Int? {
+        if (candidates.isEmpty()) return null
+        val list = candidates.mapIndexed { i, c ->
+            "${i + 1}. [fdcId=${c.fdcId}] [${c.dataType}] \"${c.description}\" — " +
+                "cal=${"%.0f".format(c.calories)}, P=${"%.1f".format(c.protein)}, " +
+                "F=${"%.1f".format(c.fat)}, C=${"%.1f".format(c.carbs)}"
+        }.joinToString("\n")
+
+        val prompt = """
+You are a nutrition expert selecting the single best USDA Food Data Central entry that matches a user's food query.
+
+User query (original language): "$queryRu"
+User query (English): "$queryEn"
+
+USDA candidates (values are per 100g):
+$list
+
+Selection rules — in order of importance:
+
+1. **BIOLOGICAL IDENTITY is non-negotiable.** The candidate MUST be the SAME species / product as the query — not a lexically similar but biologically different food. If none of the candidates is the same product, return fdc_id = null.
+   Common traps to REJECT:
+   - "черемша" / "wild garlic" / "ramps" / "wild leek" (Allium ursinum / Allium tricoccum) is NOT the same as "garlic" (Allium sativum) — garlic bulbs have ~33g carbs, wild garlic leaves have ~3-6g. Never accept "Garlic, raw" for a "wild garlic" / "ramps" / "черемша" query.
+   - "cashew" is NOT "chestnut"; "chestnut" is NOT "water chestnut".
+   - "cilantro" / "coriander leaf" is NOT "coriander seed"; "parsley" is NOT "cilantro".
+   - "sweet potato" / "yam" is NOT "potato".
+   - "sour cherry" / "вишня" is NOT "sweet cherry" / "черешня".
+   - "buckwheat" is NOT "wheat"; "millet" is NOT "corn".
+   - "quinoa" is NOT "couscous"; "spelt" is NOT "wheat".
+   - "kohlrabi" is NOT "cabbage"; "bok choy" is NOT "cabbage".
+   - "veal" is NOT "beef"; "mutton" is NOT "lamb".
+   - "salmon" is NOT "trout"; "cod" is NOT "haddock" (different species — check the description carefully).
+   - Frozen / canned / dried / juice / pie / jam / chips / cereal / candy / powder / ice cream forms are NOT the raw whole product.
+
+2. **Macronutrient sanity check.** For the query's food family (leafy green, root vegetable, fruit, meat, grain, dairy...), the candidate's macros must be plausible. A "leafy green vegetable" query with >20g carbs per 100g is almost certainly the wrong product (leaves rarely exceed 5-8g carbs). A "raw fruit" query with 0g fiber and >30g carbs is likely juice or dried fruit.
+
+3. **Preparation state must match:**
+   - For raw fruits / vegetables / berries with no cooking method mentioned — pick "raw" / whole product.
+   - For cooked / boiled / porridge — pick an entry with matching preparation state ("cooked", NOT "from raw" which means dry-weight equivalent).
+   - Frozen / canned / dried / juice / pie / jam / chips / cereal / candy / powder / ice cream are different products — do NOT accept unless the query explicitly asked for that form.
+
+4. **Data-type preference:** Prefer "Survey (FNDDS)", "SR Legacy", "Foundation" over "Branded" for generic ingredients.
+
+5. **Implausible Branded macros filter:** Reject Branded entries where protein > 40g (unless protein powder / whey / jerky / parmesan), carbs > 75g (unless sugar / jam / flour / cereal / dried), fat > 70g (unless oil / butter / ghee / lard / mayonnaise).
+
+6. **Atwater check:** Reject entries where 4·protein + 9·fat + 4·carbs > 1.3 × calories.
+
+7. **Poultry:** For chicken / turkey breast or thigh, prefer "skinless" / "meat only" unless the query mentions skin or coating.
+
+8. **Generic over variety:** Prefer generic entries over variety-specific ones when the query has no variety qualifier ("tomatoes, raw" over "tomatoes, green, raw").
+
+9. **No hallucination:** Only return an fdcId from the numbered list above. If nothing is a good match, return null — DO NOT force a pick.
+
+Return ONLY a JSON object:
+{"fdc_id": <chosen id, or null if none of the candidates match well>, "reason": "<one short sentence explaining the pick or why nothing fit>"}
+""".trimIndent()
+
+        return try {
+            val text = callOpenRouterWithRetry(
+                messages = listOf(OpenRouterMessage(role = "user", content = prompt)),
+                models = textModels
+            )
+            val json = extractJson(text)
+            val map = gson.fromJson(json, Map::class.java) as? Map<String, Any>
+            if (map == null) {
+                Log.w("Repository", "AI USDA pick returned non-map for '$queryEn'")
+                return null
+            }
+            val id = when (val raw = map["fdc_id"]) {
+                is Number -> raw.toInt()
+                is String -> raw.toIntOrNull()
+                else -> null
+            }
+            Log.d("Repository", "AI USDA pick for '$queryEn': fdcId=$id, reason=${map["reason"]}")
+            // Guard against hallucination: the id must exist in the candidate list.
+            if (id != null && candidates.any { it.fdcId == id }) id else null
+        } catch (e: Exception) {
+            Log.w("Repository", "AI USDA pick failed for '$queryEn': ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * Adversarial post-verification: after askAiToPickUsdaCandidate picks a candidate,
+     * ask the AI a fresh, sharply-focused question — "is this REALLY the same biological
+     * product as the query?" — with an instruction to default to REJECT on any doubt.
+     * Catches lexical-similarity traps that a permissive selection prompt might slip
+     * through (e.g. AI picks "Garlic, raw" for a "черемша"/"wild garlic" query).
+     */
+    private suspend fun verifyUsdaPick(
+        queryRu: String,
+        queryEn: String,
+        pick: UsdaCandidateBrief
+    ): Boolean {
+        val prompt = """
+You are a nutrition-safety reviewer. Someone selected a USDA entry as the match for a user's food query. Your job is to REJECT it if the entry is NOT the same biological product / species / dish, even if the names are lexically similar.
+
+User query (original language): "$queryRu"
+User query (English): "$queryEn"
+
+Selected USDA entry:
+  description: "${pick.description}"
+  dataType:    "${pick.dataType}"
+  per 100g:    cal=${"%.0f".format(pick.calories)}, P=${"%.1f".format(pick.protein)}, F=${"%.1f".format(pick.fat)}, C=${"%.1f".format(pick.carbs)}
+
+Answer TWO questions:
+1. is_same_product: is this USDA entry the SAME biological product / species / dish as the user asked for? Different species (garlic vs wild garlic, cashew vs chestnut, cilantro vs parsley, sour vs sweet cherry, sweet potato vs potato, veal vs beef, salmon vs trout, buckwheat vs wheat, etc.) → false. Different form (juice / jam / pie / chips / dried / candied / powder / ice cream when the user asked for the whole raw product) → false.
+2. macros_plausible: are the per-100g macros plausible for the QUERIED product's food family? A leafy green with >15g carbs is suspicious. A raw fruit with 0g fiber and >30g carbs is likely juice or dried. Meat with 0g protein is wrong.
+
+Default to false if unsure. It's better to reject a correct pick than accept a wrong one — the caller will fall back to a different data source.
+
+Return ONLY a JSON object:
+{"is_same_product": <true|false>, "macros_plausible": <true|false>, "reason": "<one short sentence>"}
+""".trimIndent()
+        return try {
+            val text = callOpenRouterWithRetry(
+                messages = listOf(OpenRouterMessage(role = "user", content = prompt)),
+                models = textModels
+            )
+            val json = extractJson(text)
+            val map = gson.fromJson(json, Map::class.java) as? Map<*, *>
+            if (map == null) {
+                Log.w("Repository", "verifyUsdaPick: non-map response for '$queryEn' — treating as REJECT")
+                return false
+            }
+            fun bool(key: String): Boolean = when (val v = map[key]) {
+                is Boolean -> v
+                is String -> v.equals("true", ignoreCase = true)
+                else -> false
+            }
+            val ok = bool("is_same_product") && bool("macros_plausible")
+            Log.d("Repository", "verifyUsdaPick '${pick.description}' for '$queryEn': ok=$ok reason=${map["reason"]}")
+            ok
+        } catch (e: Exception) {
+            Log.w("Repository", "verifyUsdaPick failed for '$queryEn': ${e.message} — treating as REJECT")
+            false
+        }
+    }
+
+    /**
+     * Ask the AI for 2-3 alternative English USDA search queries when the initial
+     * search returned no acceptable matches. Used for localised / transliterated
+     * dishes where a direct translation doesn't hit USDA descriptions.
+     */
+    private suspend fun generateAltUsdaQueries(queryRu: String, queryEn: String): List<String> {
+        val prompt = """
+The USDA Food Data Central search for "$queryEn" returned no good matches for user query "$queryRu".
+Suggest 2-3 alternative English search queries that USDA is more likely to index for this exact food.
+
+Rules:
+- Use American English (beet not beetroot, eggplant not aubergine, cilantro not coriander leaf).
+- Use USDA-style naming: singular plain nouns, "raw" / "cooked" if applicable.
+- Include synonyms, common names, and simpler forms (e.g. "farmers cheese" for "curd").
+- Keep the meaning of the original query — do NOT return a different food.
+
+Examples:
+- "wild garlic raw" (черемша) → ["ramps raw", "wild leek raw", "allium tricoccum raw"]
+- "kefir 1%" → ["kefir low fat", "cultured milk kefir"]
+- "green buckwheat" → ["buckwheat groats raw", "buckwheat kernels raw"]
+- "curd 5%" → ["cottage cheese lowfat", "farmers cheese"]
+- "borscht" → ["beet soup", "borscht russian"]
+
+Return ONLY a JSON array of English strings, e.g. ["query1", "query2", "query3"].
+""".trimIndent()
+
+        return try {
+            val text = callOpenRouterWithRetry(
+                messages = listOf(OpenRouterMessage(role = "user", content = prompt)),
+                models = textModels
+            )
+            val json = extractJsonContent(text)
+            val type = object : TypeToken<List<String>>() {}.type
+            // Try as raw array first; fall back to looking for a nested list inside a wrapper object
+            val list: List<String> = try {
+                gson.fromJson<List<String>>(json, type) ?: emptyList()
+            } catch (_: Exception) {
+                val map = gson.fromJson(json, Map::class.java) as? Map<*, *>
+                val firstList = map?.values?.firstOrNull { it is List<*> } as? List<*>
+                firstList?.mapNotNull { it as? String } ?: emptyList()
+            }
+            // Cap at 2 to keep sequential AI cost bounded (2 alt rounds max).
+            list.filter { it.isNotBlank() }.distinct().take(2)
+        } catch (e: Exception) {
+            Log.w("Repository", "AI alt-query generation failed for '$queryEn': ${e.message}")
+            emptyList()
+        }
+    }
+
     suspend fun analyzeFoodText(foodDescription: String, useCache: Boolean = true): List<FoodAnalysisResult> {
         // Step 0: Try local parse + cache lookup first
         val localParsed = parseLocalFoodInput(foodDescription)
@@ -801,7 +1034,7 @@ Rules:
             }
         }
 
-        // Step 2: USDA lookup for uncached foods
+        // Step 2: USDA lookup for uncached foods — AI picks the best candidate
         for ((idx, item) in aiPending.withIndex()) {
             Log.d("Repository", "Processing: '${item.foodNameRu}' / '${item.foodNameEn}', weight=${item.weight}g")
             try {
@@ -840,210 +1073,74 @@ Rules:
                     continue
                 }
 
-                val usdaResult = usdaApi.searchFoods(query = negationCleaned.ifBlank { foodNameEnForSearch })
-                // Relevance filter: USDA description must contain the main food word
-                // This prevents "lightly salted salmon" matching "Almonds, lightly salted"
-                val queryWords = negationCleaned.lowercase().split("\\s+".toRegex())
-                    .filter { it.length >= 3 }
-                val cookingTerms = setOf(
-                    "porridge", "cooked", "boiled", "fried", "baked", "grilled",
-                    "steamed", "roasted", "stewed", "casserole", "braised", "raw",
-                    "fresh", "dried", "frozen", "canned", "smoked", "pickled",
-                    "mashed", "sliced", "chopped", "minced", "ground", "whole",
-                    "hot", "cold", "warm", "thick", "thin", "light", "heavy",
-                    "homemade", "instant", "regular", "plain", "with", "without"
-                )
-                // Exclude color/size adjectives from mainWord so "green beans" → mainWord="beans", not "green"
-                val genericModifiers = setOf("green", "red", "yellow", "white", "black", "purple", "orange", "blue", "pink", "dark", "light", "large", "small", "baby", "mini", "giant", "sweet", "sour", "bitter", "wild")
-                val mainWord = queryWords
-                    .filter { it !in cookingTerms && it !in genericModifiers }
-                    .maxByOrNull { it.length }
-                    ?: queryWords.filter { it !in cookingTerms }.maxByOrNull { it.length }
-                    ?: queryWords.maxByOrNull { it.length } // fallback if all words are cooking terms
-                val secondaryWords = queryWords.filter { it != mainWord }
-                // Generate stem-like forms for matching (cherry↔cherries, potato↔potatoes, berry↔berries)
-                fun wordForms(word: String): List<String> {
-                    val forms = mutableListOf(word)
-                    forms.add(word + "s")
-                    forms.add(word + "es")
-                    if (word.endsWith("y") && word.length > 2) {
-                        forms.add(word.dropLast(1) + "ies") // cherry→cherries
+                // Round 1: search USDA with the direct English name, ask AI to pick the best match.
+                val primaryQuery = negationCleaned.ifBlank { foodNameEnForSearch }
+                // The query shown to the AI must match what USDA was actually searched for —
+                // otherwise for dairy-with-% ("творог 5%" → foodNameEnForSearch="curd") the AI
+                // sees "curd 5%" and rejects the base-product hits as fat-mismatched.
+                val queryRuForAi = if (isDairyWithPercent) stripFatPercent(item.foodNameRu) else item.foodNameRu
+                val queryEnForAi = if (isDairyWithPercent) stripFatPercent(item.foodNameEn) else item.foodNameEn
+                val allCandidates = mutableMapOf<Int, UsdaFood>() // fdcId → UsdaFood, cumulative across rounds
+                var selectedFood: UsdaFood? = null
+
+                // Runs one USDA search round: fetches, dedups, then asks AI to pick from the FULL
+                // cumulative candidate set (not just this round's delta) — so a later alt query
+                // doesn't hide a good round-1 hit from the AI. After the pick, a second AI call
+                // adversarially verifies the pick is the same biological product.
+                suspend fun runOneRound(query: String): UsdaFood? {
+                    val res = usdaApi.searchFoods(query = query)
+                    val fresh = res.foods.orEmpty().mapNotNull { f ->
+                        val id = f.fdcId ?: return@mapNotNull null
+                        if (allCandidates.containsKey(id)) null else f
                     }
-                    if (word.endsWith("ies") && word.length > 4) {
-                        forms.add(word.dropLast(3) + "y") // cherries→cherry
+                    for (f in fresh) allCandidates[f.fdcId!!] = f
+                    val briefsById = allCandidates.values.mapNotNull { usdaCandidateBrief(it) }
+                        .associateBy { it.fdcId }
+                    if (briefsById.isEmpty()) {
+                        Log.d("Repository", "USDA query='$query' — no candidates with calories in cumulative set")
+                        return null
                     }
-                    if (word.endsWith("es") && word.length > 3) {
-                        forms.add(word.dropLast(2)) // potatoes→potato
-                    }
-                    if (word.endsWith("s") && !word.endsWith("ss") && word.length > 2) {
-                        forms.add(word.dropLast(1)) // cherries already handled above, but apples→apple
-                    }
-                    return forms
-                }
-                fun descContainsWord(desc: String, word: String): Boolean {
-                    return wordForms(word).any { desc.contains(it) }
-                }
-                fun isRelevant(description: String?): Boolean {
-                    if (description == null || mainWord == null) return false
-                    val desc = description.lowercase()
-                    // Main word MUST be present (check all plural/singular forms)
-                    if (!descContainsWord(desc, mainWord)) return false
-                    // If there are secondary words, at least one should match too (if 3+ query words)
-                    if (queryWords.size >= 3 && secondaryWords.isNotEmpty()) {
-                        return secondaryWords.any { descContainsWord(desc, it) }
-                    }
-                    return true
-                }
-                // Pick best USDA result: prefer Survey/SR Legacy over Branded, require calories > 0, must be relevant
-                // Score by: data type priority + number of matching query words + prefer "NFS"/"raw" over recipes
-                val foodsWithCalories = usdaResult.foods?.filter { f ->
-                    f.foodNutrients?.any { it.nutrientId == UsdaFoodNutrient.ENERGY && (it.value ?: 0.0) > 0 } == true
-                        && isRelevant(f.description)
-                } ?: emptyList()
-                // Helper: generate plural forms for a word (handles regular + y→ies)
-                fun plurals(word: String): List<String> {
-                    val forms = mutableListOf(word, word + "s", word + "es")
-                    if (word.endsWith("y") && word.length > 2) {
-                        forms.add(word.dropLast(1) + "ies") // cherry→cherries, berry→berries
-                    }
-                    return forms
-                }
-                fun scoreFood(f: com.nutrition.tracker.data.api.UsdaFood): Int {
-                    val desc = (f.description ?: "").lowercase()
-                    val queryAsksRaw = queryWords.contains("raw")
-                    val queryAsksCooked = queryWords.any { it in setOf("porridge", "cooked", "boiled", "steamed", "stewed", "braised", "baked", "fried", "grilled", "roasted") }
-                    // For "raw" queries SR Legacy lab data is more reliable than FNDDS dietary surveys
-                    val typePriority = when (f.dataType) {
-                        "Survey (FNDDS)" -> if (queryAsksRaw) 160 else 200
-                        "SR Legacy" -> if (queryAsksRaw) 190 else 150
-                        "Foundation" -> if (queryAsksRaw) 170 else 130
-                        "Branded" -> 50
-                        else -> 100
-                    }
-                    // Word match count bonus (each matching word = +30)
-                    val wordMatchBonus = queryWords.count { descContainsWord(desc, it) } * 30
-                    // "from raw" means cooked starting from raw state — NOT actually raw
-                    val isActuallyRaw = desc.contains("raw") && !desc.contains("from raw")
-                    val plainBonus = when {
-                        desc.contains(", nfs") -> 25
-                        queryAsksCooked && desc.contains("cooked") -> 30
-                        queryAsksCooked && isActuallyRaw -> -20
-                        !queryAsksCooked && isActuallyRaw -> 20
-                        desc.startsWith("fish,") || desc.startsWith("fish ") -> 15
-                        desc.contains("salted") || desc.contains("smoked") || desc.contains("canned") -> 10
-                        else -> 0
-                    }
-                    // Penalize processing state mismatch: query asks raw but entry is pickled/canned/dried etc.
-                    val processingMismatch = if (queryAsksRaw) {
-                        val processedTerms = listOf("pickled", "canned", "dried", "dehydrated", "smoked", "frozen", "baked", "fried", "cooked", "roasted", "candied", "glazed", "salted", "chips", "crisps", "powder", "flakes", "juice")
-                        if (processedTerms.any { desc.contains(it) }) -120 else 0
-                    } else 0
-                    // Penalize compound dish names (short descriptions with no comma = likely a recipe name)
-                    val recipePenalty = if (f.dataType == "Survey (FNDDS)" && !desc.contains(",") && desc.split(" ").size <= 3) -40 else 0
-                    // Penalize derivative/composite products that contain dish-type words NOT in the query
-                    // e.g. "cherry turnover", "cherry pie", "cherry juice" when user just asked for "cherry"
-                    val dishTypeWords = setOf(
-                        "pie", "cake", "cobbler", "turnover", "crisp", "crumble", "tart", "strudel",
-                        "juice", "jam", "jelly", "preserve", "sauce", "syrup", "compote", "filling",
-                        "ice cream", "yogurt", "smoothie", "shake", "milkshake",
-                        "muffin", "scone", "bread", "cookie", "brownie", "pudding", "parfait",
-                        "dried", "candied", "glazed", "chocolate",
-                        "oil", "butter", "lard", "ghee", "margarine"
-                    )
-                    val queryLowerFull = item.foodNameEn.lowercase()
-                    val derivativePenalty = if (dishTypeWords.any { desc.contains(it) && !queryLowerFull.contains(it) }) -80 else 0
-                    // Penalize Branded items that are a different product category
-                    // e.g. "STRAWBERRY MILKSHAKE CEREAL" is a cereal, not a milkshake
-                    val differentCategoryWords = listOf("cereal", "protein powder", "toaster pastries", "pastries", "ice cream", "candy", "bar", "cookie", "cookies", "gummies", "gummy", "supplement", "mix", "powder")
-                    val categoryPenalty = if (f.dataType == "Branded" && differentCategoryWords.any { desc.contains(it) && !queryLowerFull.contains(it) }) -100 else 0
-                    // Skin/coating handling for poultry: prefer "skinless"/"meat only"/"skin not eaten" when query doesn't mention skin
-                    // Users in Eastern Europe typically mean skinless breast/thigh unless explicitly stated
-                    val queryMentionsSkin = queryLowerFull.contains("skin") || queryLowerFull.contains("with skin")
-                    val queryMentionsCoating = queryLowerFull.contains("coat") || queryLowerFull.contains("bread") || queryLowerFull.contains("панировк")
-                    val skinBonus = if (!queryMentionsSkin && (queryLowerFull.contains("chicken") || queryLowerFull.contains("turkey") || queryLowerFull.contains("breast") || queryLowerFull.contains("thigh"))) {
-                        when {
-                            desc.contains("skinless") || desc.contains("meat only") || desc.contains("without skin") -> 60
-                            desc.contains("skin not eaten") || desc.contains("coating not eaten") -> 40
-                            desc.contains("skin eaten") || desc.contains("with skin") -> -40
-                            else -> 0
+                    Log.d("Repository", "USDA query='$query': +${fresh.size} new, ${briefsById.size} total fed to AI")
+                    // Up to 2 selection attempts: if the pick fails post-verification, ask AI
+                    // to choose from the remaining candidates.
+                    val excluded = mutableSetOf<Int>()
+                    repeat(2) {
+                        val remaining = briefsById.values.filter { it.fdcId !in excluded }
+                        if (remaining.isEmpty()) return@repeat
+                        val pickedId = askAiToPickUsdaCandidate(queryRuForAi, queryEnForAi, remaining) ?: return@repeat
+                        val pickedBrief = briefsById[pickedId] ?: return@repeat
+                        if (verifyUsdaPick(queryRuForAi, queryEnForAi, pickedBrief)) {
+                            return allCandidates[pickedId]
                         }
-                    } else 0
-                    // Penalize coated/breaded entries when user didn't ask for coating
-                    val coatedPenalty = if (!queryMentionsCoating && desc.contains("coated")) -50 else 0
-                    // Prefer entries where description closely matches query length (penalize very long descriptions)
-                    val descWords = desc.split("\\W+".toRegex()).filter { it.length >= 3 }
-                    val lengthPenalty = if (descWords.size > queryWords.size * 3) -20 else 0
-                    // Prefer entries where description STARTS with the query word (exact product, not a flavor)
-                    val mainWordPlurals = if (mainWord != null) plurals(mainWord) else emptyList()
-                    val startsWithBonus = if (mainWord != null && mainWordPlurals.any { desc.startsWith(it) }) 40 else 0
-                    // Prefer entries with comma-separated format (USDA standard naming: "PRODUCT, VARIETY")
-                    val beforeComma = desc.substringBefore(",").trim()
-                    val commaFormatBonus = when {
-                        desc.contains(",") && mainWord != null && mainWordPlurals.any { beforeComma == it } -> 30
-                        desc.contains(",") && desc.indexOf(",") <= desc.length / 2 -> 15
-                        else -> 0
+                        Log.d("Repository", "verifyUsdaPick REJECTED '${pickedBrief.description}' for '$queryEnForAi' — retrying selection")
+                        excluded.add(pickedId)
                     }
-                    // Penalize partial-product entries (e.g. "Potatoes, raw, skin" vs "Potatoes, flesh and skin, raw")
-                    val partWords = listOf("skin", "peel", "rind", "pit", "seed", "leaves", "tops", "pulp")
-                    val queryMentionsPart = partWords.any { queryLowerFull.contains(it) }
-                    val partialProductPenalty = if (!queryMentionsPart) {
-                        val isWhole = desc.contains("flesh and skin") || desc.contains("includes skin") || desc.contains("with skin") || desc.contains("whole")
-                        if (partWords.any { desc.contains(it) } && !isWhole) -60 else 0
-                    } else 0
-                    // Prefer generic entries over variety-specific ones when query has no color/variety qualifier.
-                    // e.g. "tomato raw" → prefer "Tomatoes, raw" over "Tomatoes, green, raw"
-                    // e.g. "grapes raw" → prefer "Grapes, raw" over "Grapes, muscadine, raw"
-                    val varietyPenalty = run {
-                        val queryHasVariety = queryWords.any { it in genericModifiers || it.length > 7 }
-                        if (!queryHasVariety) {
-                            val parts = desc.split(",").map { it.trim() }
-                            val extraParts = parts.drop(1).filter { p ->
-                                queryWords.none { descContainsWord(p, it) } && p != "raw" && p != "nfs"
-                            }
-                            if (parts.size >= 3 && extraParts.isNotEmpty()) -30 else 0
-                        } else 0
-                    }
-                    return typePriority + wordMatchBonus + plainBonus + processingMismatch + recipePenalty + derivativePenalty + categoryPenalty + skinBonus + coatedPenalty + lengthPenalty + startsWithBonus + commaFormatBonus + partialProductPenalty + varietyPenalty
+                    return null
                 }
-                // Log all candidates for debugging
-                Log.d("Repository", "USDA query='${item.foodNameEn}', mainWord='$mainWord', ${foodsWithCalories.size} candidates:")
-                for (candidate in foodsWithCalories.sortedByDescending { scoreFood(it) }) {
-                    val cNuts = candidate.foodNutrients?.associate { (it.nutrientId ?: 0) to (it.value ?: 0.0) } ?: emptyMap()
-                    Log.d("Repository", "  score=${scoreFood(candidate)} '${candidate.description}' [${candidate.dataType}] cal=${cNuts[1008]} p=${cNuts[1003]} c=${cNuts[1005]}")
-                }
-                val food = foodsWithCalories
-                    .sortedByDescending { scoreFood(it) }
-                    .firstOrNull()
-                var selectedFood = food
-                if (selectedFood != null && selectedFood.dataType == "Branded") {
-                    val nMap = mutableMapOf<Int, Double>()
-                    for (fn in selectedFood.foodNutrients ?: emptyList()) {
-                        if (fn.nutrientId != null && fn.value != null) nMap[fn.nutrientId] = fn.value
-                    }
-                    val prot = nMap[UsdaFoodNutrient.PROTEIN] ?: 0.0
-                    val fat = nMap[UsdaFoodNutrient.FAT] ?: 0.0
-                    val carbs = nMap[UsdaFoodNutrient.CARBS] ?: 0.0
-                    val queryLower = item.foodNameEn.lowercase()
-                    val highProtOk = listOf("protein", "powder", "whey", "casein", "isolate", "jerky", "dried meat", "parmesan").any { queryLower.contains(it) }
-                    val highCarbOk = listOf("sugar", "honey", "syrup", "candy", "jam", "dried", "flour", "cereal", "granola").any { queryLower.contains(it) }
-                    val highFatOk = listOf("oil", "butter", "lard", "ghee", "mayo", "mayonnaise").any { queryLower.contains(it) }
-                    if ((prot > 40 && !highProtOk) || (carbs > 75 && !highCarbOk) || (fat > 70 && !highFatOk)) {
-                        Log.w("Repository", "Top USDA pick '${selectedFood.description}' rejected (implausible macros p=$prot f=$fat c=$carbs for '$queryLower'), trying next")
-                        selectedFood = foodsWithCalories.sortedByDescending { scoreFood(it) }
-                            .drop(1)
-                            .firstOrNull { alt ->
-                                val altMap = mutableMapOf<Int, Double>()
-                                for (fn in alt.foodNutrients ?: emptyList()) {
-                                    if (fn.nutrientId != null && fn.value != null) altMap[fn.nutrientId] = fn.value
-                                }
-                                val ap = altMap[UsdaFoodNutrient.PROTEIN] ?: 0.0
-                                val ac = altMap[UsdaFoodNutrient.CARBS] ?: 0.0
-                                val af = altMap[UsdaFoodNutrient.FAT] ?: 0.0
-                                !((ap > 40 && !highProtOk) || (ac > 75 && !highCarbOk) || (af > 70 && !highFatOk))
-                            }
+
+                selectedFood = runOneRound(primaryQuery)
+
+                // Round 2 (fallback): ask AI for alternative queries, retry.
+                // Skip alt queries for dairy-with-% — GOST correction path takes over anyway.
+                // We DON'T skip based on candidate count anymore — the black case (черемша →
+                // 25 garlic candidates, all wrong) is exactly when alt queries save us.
+                val shouldTryAlt = selectedFood == null && !isDairyWithPercent
+                if (shouldTryAlt) {
+                    val altQueries = generateAltUsdaQueries(queryRuForAi, queryEnForAi)
+                    Log.d("Repository", "AI suggested alt queries for '$queryEnForAi': $altQueries")
+                    for (alt in altQueries) {
+                        if (alt.equals(primaryQuery, ignoreCase = true) ||
+                            alt.equals(foodNameEnForSearch, ignoreCase = true)) continue
+                        selectedFood = runOneRound(alt)
+                        if (selectedFood != null) break
                     }
                 }
-                Log.d("Repository", "USDA selected: '${selectedFood?.description}' (${selectedFood?.dataType}), score=${selectedFood?.let { scoreFood(it) }}, from ${foodsWithCalories.size} candidates")
+
+                // Safety net: if AI rejected everything but candidates exist, fall through to Step 3 (AI nutrients).
+                if (selectedFood == null) {
+                    Log.d("Repository", "AI rejected all USDA candidates for '${item.foodNameEn}' — falling through to Step 3")
+                }
+                Log.d("Repository", "USDA selected: '${selectedFood?.description}' (${selectedFood?.dataType}) from ${allCandidates.size} unique candidates")
                 if (selectedFood?.foodNutrients != null) {
                     val nMap = mutableMapOf<Int, Double>()
                     for (fn in selectedFood.foodNutrients) {
