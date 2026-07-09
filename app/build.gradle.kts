@@ -100,5 +100,8 @@ dependencies {
     implementation(libs.camerax.view)
     implementation(libs.mlkit.barcode)
 
+    // QR code generation
+    implementation("com.google.zxing:core:3.5.3")
+
     debugImplementation(libs.androidx.ui.tooling)
 }

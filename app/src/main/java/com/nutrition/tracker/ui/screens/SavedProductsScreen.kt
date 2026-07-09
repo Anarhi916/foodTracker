@@ -1,8 +1,11 @@
 package com.nutrition.tracker.ui.screens
 
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -10,18 +13,29 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nutrition.tracker.data.db.FoodCacheEntity
 import com.nutrition.tracker.data.model.NutrientData
+import com.nutrition.tracker.util.FoodShare
+import com.nutrition.tracker.util.QrGenerator
 import com.nutrition.tracker.util.transliterateToLatin
 import com.nutrition.tracker.viewmodel.MainViewModel
 
@@ -33,6 +47,7 @@ fun SavedProductsScreen(
 ) {
     val cachedFoods by viewModel.cachedFoods.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     var showDeleteConfirm by remember { mutableStateOf<FoodCacheEntity?>(null) }
     var showClearAllConfirm by remember { mutableStateOf(false) }
     var editEntry by remember { mutableStateOf<FoodCacheEntity?>(null) }
@@ -45,6 +60,8 @@ fun SavedProductsScreen(
     var quickAddEntry by remember { mutableStateOf<FoodCacheEntity?>(null) }
     var quickAddWeight by remember { mutableStateOf("100") }
     var searchQuery by remember { mutableStateOf("") }
+    var shareChooserEntry by remember { mutableStateOf<FoodCacheEntity?>(null) }
+    var qrEntry by remember { mutableStateOf<FoodCacheEntity?>(null) }
 
     val filteredFoods = remember(cachedFoods, searchQuery) {
         if (searchQuery.isBlank()) cachedFoods
@@ -106,6 +123,105 @@ fun SavedProductsScreen(
                 TextButton(onClick = { quickAddEntry = null }) { Text("Отмена") }
             }
         )
+    }
+
+    // Share method chooser
+    shareChooserEntry?.let { entry ->
+        val nutrients = try {
+            com.google.gson.Gson().fromJson(entry.nutrientsPer100gJson, NutrientData::class.java)
+        } catch (_: Exception) { NutrientData() }
+        AlertDialog(
+            onDismissRequest = { shareChooserEntry = null },
+            title = { Text("Поделиться") },
+            text = {
+                Column {
+                    Text(entry.keyOriginal, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "Отправьте ссылку через мессенджер или покажите QR-код собеседнику.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val link = FoodShare.buildShareLink(entry.keyOriginal, entry.keyEn, nutrients)
+                    FoodShare.shareViaSystem(context, link, entry.keyOriginal)
+                    shareChooserEntry = null
+                }) { Text("Ссылкой") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    qrEntry = entry
+                    shareChooserEntry = null
+                }) { Text("QR-кодом") }
+            }
+        )
+    }
+
+    // Full-screen QR display
+    qrEntry?.let { entry ->
+        val nutrients = try {
+            com.google.gson.Gson().fromJson(entry.nutrientsPer100gJson, NutrientData::class.java)
+        } catch (_: Exception) { NutrientData() }
+        val link = remember(entry.id) { FoodShare.buildShareLink(entry.keyOriginal, entry.keyEn, nutrients) }
+        val bitmap = remember(link) { QrGenerator.generateBitmap(link, 900) }
+
+        Dialog(onDismissRequest = { qrEntry = null }) {
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.surface,
+                modifier = Modifier.fillMaxWidth().padding(8.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        entry.keyOriginal,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Наведите камеру приложения на код",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(Modifier.height(20.dp))
+                    if (bitmap != null) {
+                        Image(
+                            bitmap = bitmap.asImageBitmap(),
+                            contentDescription = "QR-код",
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .aspectRatio(1f)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color.White)
+                        )
+                    } else {
+                        Text(
+                            "Не удалось сгенерировать QR-код",
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                    Spacer(Modifier.height(20.dp))
+                    Text(
+                        "%.0f ккал • Б %.1f • Ж %.1f • У %.1f".format(
+                            nutrients.calories, nutrients.protein, nutrients.fat, nutrients.carbs
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    TextButton(onClick = { qrEntry = null }) { Text("Закрыть") }
+                }
+            }
+        }
     }
 
     // Delete confirmation dialog
@@ -426,7 +542,7 @@ fun SavedProductsScreen(
                                 Text("Б", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.6f))
                                 Text("Ж", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.6f))
                                 Text("У", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.6f))
-                                Spacer(Modifier.width(92.dp))
+                                Spacer(Modifier.width(120.dp))
                             }
                         }
                     }
@@ -479,6 +595,12 @@ fun SavedProductsScreen(
                                     modifier = Modifier.size(28.dp)
                                 ) {
                                     Icon(Icons.Default.Edit, contentDescription = "Редактировать", modifier = Modifier.size(16.dp))
+                                }
+                                IconButton(
+                                    onClick = { shareChooserEntry = entry },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(Icons.Default.Share, contentDescription = "Поделиться", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
                                 }
                                 IconButton(
                                     onClick = { showDeleteConfirm = entry },

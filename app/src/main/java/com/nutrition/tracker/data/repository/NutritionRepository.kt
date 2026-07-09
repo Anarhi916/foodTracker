@@ -744,29 +744,58 @@ Return ONLY a JSON object:
     }
 
     /**
-     * Ask the AI for 2-3 alternative English USDA search queries when the initial
-     * search returned no acceptable matches. Used for localised / transliterated
-     * dishes where a direct translation doesn't hit USDA descriptions.
+     * Generate 2-3 USDA FDC-optimized search queries for a food item.
+     * Called BEFORE the USDA search — replaces the naive "use food_name_en directly" approach.
+     *
+     * USDA indexes food as INGREDIENT + PREPARATION STATE, not as dish names.
+     * "beef braised" ≠ "beef stew" — stew is a composite dish in USDA.
+     * This function knows USDA naming conventions so the identify prompt doesn't have to.
      */
-    private suspend fun generateAltUsdaQueries(queryRu: String, queryEn: String): List<String> {
+    private suspend fun generateUsdaSearchQueries(queryRu: String, queryEn: String): List<String> {
         val prompt = """
-The USDA Food Data Central search for "$queryEn" returned no good matches for user query "$queryRu".
-Suggest 2-3 alternative English search queries that USDA is more likely to index for this exact food.
+You are a USDA Food Data Central (FDC) database search expert. Generate 2-3 English search queries that will find the correct USDA FDC entry for the given food.
 
-Rules:
-- Use American English (beet not beetroot, eggplant not aubergine, cilantro not coriander leaf).
-- Use USDA-style naming: singular plain nouns, "raw" / "cooked" if applicable.
-- Include synonyms, common names, and simpler forms (e.g. "farmers cheese" for "curd").
-- Keep the meaning of the original query — do NOT return a different food.
+User query (original language): "$queryRu"
+User query (English): "$queryEn"
 
-Examples:
-- "wild garlic raw" (черемша) → ["ramps raw", "wild leek raw", "allium tricoccum raw"]
-- "kefir 1%" → ["kefir low fat", "cultured milk kefir"]
-- "green buckwheat" → ["buckwheat groats raw", "buckwheat kernels raw"]
-- "curd 5%" → ["cottage cheese lowfat", "farmers cheese"]
-- "borscht" → ["beet soup", "borscht russian"]
+USDA FDC names food as INGREDIENT + PREPARATION STATE — NOT as dish names. This is critical:
 
-Return ONLY a JSON array of English strings, e.g. ["query1", "query2", "query3"].
+RULE 1 — MEAT / POULTRY with a cooking method → use the method as an adjective, NEVER a dish name:
+  Correct: "beef braised", "pork roasted", "chicken fried", "lamb braised", "turkey baked"
+  WRONG: "beef stew", "pork ragout", "chicken casserole", "lamb curry", "beef stroganoff"
+  → "beef stew" is a composite DISH (with vegetables and sauce). "beef braised" is the INGREDIENT.
+  → Any word like stew / ragout / casserole / curry / stroganoff / goulash = composite dish → DO NOT use.
+  Examples:
+  - "говядина тушёная" / "beef braised" → ["beef braised", "beef chuck braised"]
+  - "свинина тушёная" / "pork braised" → ["pork braised", "pork shoulder braised"]
+  - "курица тушёная" / "chicken braised" → ["chicken braised", "chicken thigh braised"]
+  - "говядина жареная" / "beef fried" → ["beef pan-fried", "beef fried"]
+  - "свинина запечённая" / "pork roasted" → ["pork roasted", "pork loin roasted"]
+  - "баранина тушёная" / "lamb braised" → ["lamb braised", "lamb shoulder braised"]
+
+RULE 2 — FISH / SEAFOOD with a cooking method → same rule, never dish names:
+  - "судак тушёный" / "pike-perch braised" → ["pike-perch braised", "walleye braised", "walleye cooked"]
+  - "треска запечённая" / "cod baked" → ["cod baked", "cod roasted"]
+
+RULE 3 — GRAINS / PORRIDGE → use "cooked" or the grain name:
+  - "гречка варёная" / "buckwheat cooked" → ["buckwheat groats cooked", "buckwheat cooked"]
+  - "пшённая каша" / "millet porridge" → ["millet cooked", "millet porridge"]
+
+RULE 4 — REGIONAL / LOCALISED foods → use the closest USDA synonym:
+  - "черемша" / "wild garlic" → ["ramps raw", "wild leek raw"] (USDA uses "ramps", NOT "wild garlic")
+  - "творог" / "cottage cheese" → ["cottage cheese", "cottage cheese lowfat"]
+  - "ряженка" / "cultured milk" → ["kefir", "cultured milk fermented"]
+
+RULE 5 — RAW produce → add "raw":
+  - "помидор" / "tomato" → ["tomato raw"]
+  - "яблоко" / "apple" → ["apple raw"]
+
+RULE 6 — Use American English: beet (not beetroot), eggplant (not aubergine), zucchini (not courgette), cilantro (not coriander leaf).
+
+RULE 7 — Return 2-3 queries, most specific first. If the English query already looks like a correct USDA query (e.g. "salmon salted", "oatmeal cooked"), include it as-is and add one variation.
+
+Return ONLY a JSON array of English strings:
+["query1", "query2"]
 """.trimIndent()
 
         return try {
@@ -776,7 +805,6 @@ Return ONLY a JSON array of English strings, e.g. ["query1", "query2", "query3"]
             )
             val json = extractJsonContent(text)
             val type = object : TypeToken<List<String>>() {}.type
-            // Try as raw array first; fall back to looking for a nested list inside a wrapper object
             val list: List<String> = try {
                 gson.fromJson<List<String>>(json, type) ?: emptyList()
             } catch (_: Exception) {
@@ -784,11 +812,11 @@ Return ONLY a JSON array of English strings, e.g. ["query1", "query2", "query3"]
                 val firstList = map?.values?.firstOrNull { it is List<*> } as? List<*>
                 firstList?.mapNotNull { it as? String } ?: emptyList()
             }
-            // Cap at 2 to keep sequential AI cost bounded (2 alt rounds max).
-            list.filter { it.isNotBlank() }.distinct().take(2)
+            list.filter { it.isNotBlank() }.distinct().take(3)
         } catch (e: Exception) {
-            Log.w("Repository", "AI alt-query generation failed for '$queryEn': ${e.message}")
-            emptyList()
+            Log.w("Repository", "generateUsdaSearchQueries failed for '$queryEn': ${e.message}")
+            // Fallback: use food_name_en as-is
+            if (queryEn.isNotBlank()) listOf(queryEn) else emptyList()
         }
     }
 
@@ -903,6 +931,24 @@ Return ONLY a JSON array of English strings, e.g. ["query1", "query2", "query3"]
 - "селедка" / "оселедець" → "herring salted"
 - "скумбрия копченая" → "mackerel smoked"
 - "тунец консервированный" → "tuna canned"
+
+КРИТИЧЕСКИ ВАЖНО для мяса/птицы с указанием способа приготовления:
+"тушеная/тушена" для МЯСА = "braised" (НЕ "stew" — stew это блюдо с овощами и подливкой!)
+"жареная/смажена" для МЯСА = "fried" или "pan-fried"
+"запечённая/запечена" для МЯСА = "baked" или "roasted"
+"варёная/варена/отварная" для МЯСА = "cooked" или "boiled"
+
+Примеры:
+- "говядина тушеная" / "яловичина тушкована" → "beef braised" (НЕ "beef stew"!)
+- "свинина тушеная" / "свинина тушкована" → "pork braised"
+- "курица тушеная" / "курка тушкована" → "chicken braised"
+- "говядина жареная" / "яловичина смажена" → "beef pan-fried"
+- "свинина запечённая" / "свинина запечена" → "pork roasted"
+- "говядина варёная" / "яловичина варена" → "beef cooked"
+- "телятина тушеная" → "veal braised"
+- "баранина тушеная" / "баранина тушкована" → "lamb braised"
+- "кролик тушеный" / "кролик тушкований" → "rabbit braised"
+
 - "паштет печеночный" / "паштет печінковий" → "liver pate"
 - "паштет" → "pate"
 - "кава" / "кофе" → "coffee brewed"
@@ -1073,19 +1119,31 @@ Return ONLY a JSON array of English strings, e.g. ["query1", "query2", "query3"]
                     continue
                 }
 
-                // Round 1: search USDA with the direct English name, ask AI to pick the best match.
-                val primaryQuery = negationCleaned.ifBlank { foodNameEnForSearch }
                 // The query shown to the AI must match what USDA was actually searched for —
-                // otherwise for dairy-with-% ("творог 5%" → foodNameEnForSearch="curd") the AI
-                // sees "curd 5%" and rejects the base-product hits as fat-mismatched.
+                // for dairy-with-% ("творог 5%" → search "curd"), AI sees clean name without "5%".
                 val queryRuForAi = if (isDairyWithPercent) stripFatPercent(item.foodNameRu) else item.foodNameRu
                 val queryEnForAi = if (isDairyWithPercent) stripFatPercent(item.foodNameEn) else item.foodNameEn
-                val allCandidates = mutableMapOf<Int, UsdaFood>() // fdcId → UsdaFood, cumulative across rounds
+
+                // Generate USDA-optimized search queries upfront.
+                // This is the core fix: instead of using food_name_en directly (which can be
+                // a natural-language dish name like "beef stew"), we ask a specialised function
+                // to produce USDA-style ingredient+preparation queries ("beef braised").
+                // For dairy-with-%, skip generation and use the stripped base name directly —
+                // the GOST correction path handles macros afterwards.
+                val searchQueries: List<String> = if (isDairyWithPercent) {
+                    listOf(negationCleaned.ifBlank { foodNameEnForSearch })
+                } else {
+                    val generated = generateUsdaSearchQueries(queryRuForAi, queryEnForAi)
+                    generated.ifEmpty { listOf(negationCleaned.ifBlank { foodNameEnForSearch }) }
+                }
+                Log.d("Repository", "USDA search queries for '${item.foodNameEn}': $searchQueries")
+
+                val allCandidates = mutableMapOf<Int, UsdaFood>()
                 var selectedFood: UsdaFood? = null
 
                 // Runs one USDA search round: fetches, dedups, then asks AI to pick from the FULL
-                // cumulative candidate set (not just this round's delta) — so a later alt query
-                // doesn't hide a good round-1 hit from the AI. After the pick, a second AI call
+                // cumulative candidate set (not just this round's delta) — so a later query
+                // doesn't hide a good earlier hit from the AI. After the pick, a second AI call
                 // adversarially verifies the pick is the same biological product.
                 suspend fun runOneRound(query: String): UsdaFood? {
                     val res = usdaApi.searchFoods(query = query)
@@ -1118,22 +1176,10 @@ Return ONLY a JSON array of English strings, e.g. ["query1", "query2", "query3"]
                     return null
                 }
 
-                selectedFood = runOneRound(primaryQuery)
-
-                // Round 2 (fallback): ask AI for alternative queries, retry.
-                // Skip alt queries for dairy-with-% — GOST correction path takes over anyway.
-                // We DON'T skip based on candidate count anymore — the black case (черемша →
-                // 25 garlic candidates, all wrong) is exactly when alt queries save us.
-                val shouldTryAlt = selectedFood == null && !isDairyWithPercent
-                if (shouldTryAlt) {
-                    val altQueries = generateAltUsdaQueries(queryRuForAi, queryEnForAi)
-                    Log.d("Repository", "AI suggested alt queries for '$queryEnForAi': $altQueries")
-                    for (alt in altQueries) {
-                        if (alt.equals(primaryQuery, ignoreCase = true) ||
-                            alt.equals(foodNameEnForSearch, ignoreCase = true)) continue
-                        selectedFood = runOneRound(alt)
-                        if (selectedFood != null) break
-                    }
+                // Try each generated query in order until AI selects and verifies a candidate.
+                for (query in searchQueries) {
+                    selectedFood = runOneRound(query)
+                    if (selectedFood != null) break
                 }
 
                 // Safety net: if AI rejected everything but candidates exist, fall through to Step 3 (AI nutrients).

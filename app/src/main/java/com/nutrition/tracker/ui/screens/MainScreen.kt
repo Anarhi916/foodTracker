@@ -74,6 +74,42 @@ fun MainScreen(
         )
     }
 
+    // QR share import dialog (when a NutriTrack QR was scanned)
+    uiState.importedSharedFood?.let { food ->
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissImportedSharedFood() },
+            title = { Text("Добавить продукт?") },
+            text = {
+                Column {
+                    Text(food.nameRu, style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        food.nameEn,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "%.0f ккал • Б %.1f г • Ж %.1f г • У %.1f г".format(
+                            food.nutrients.calories, food.nutrients.protein,
+                            food.nutrients.fat, food.nutrients.carbs
+                        ),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { viewModel.importSharedFood() }) {
+                    Text("Добавить в сохранённые")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.dismissImportedSharedFood() }) {
+                    Text("Отмена")
+                }
+            }
+        )
+    }
+
     // Supplement (BAD) dialog
     if (uiState.showSupplementDialog) {
         SupplementServingsDialog(

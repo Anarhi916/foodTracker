@@ -43,7 +43,9 @@ data class MainUiState(
     val supplementServings: String = "1",
     // Photo: nutrients per 100g for local recalculation
     val photoNutrientsPer100g: NutrientData? = null,
-    val photoFoodNameEn: String = ""
+    val photoFoodNameEn: String = "",
+    // QR share import (when a NutriTrack QR is scanned)
+    val importedSharedFood: com.nutrition.tracker.util.SharedFood? = null
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -232,6 +234,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // --- Barcode ---
     fun onBarcodeScanned(barcode: String) {
+        // Check if the scanned code is actually a NutriTrack share QR — parse and import.
+        // This lets the same "Scan" flow work for both product barcodes and shared foods.
+        val uri = try { android.net.Uri.parse(barcode) } catch (_: Exception) { null }
+        if (uri != null) {
+            val shared = com.nutrition.tracker.util.FoodShare.parseShareLink(uri)
+            if (shared != null) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = null,
+                    importedSharedFood = shared
+                )
+                return
+            }
+        }
+
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             try {
@@ -294,6 +311,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             barcodeProductName = null,
             barcodeNutrientsPer100g = null
         )
+    }
+
+    // --- QR share import ---
+    fun importSharedFood() {
+        val food = _uiState.value.importedSharedFood ?: return
+        addManualCachedFood(food.nameRu, food.nameEn.ifBlank { food.nameRu }, food.nutrients) {}
+        _uiState.value = _uiState.value.copy(importedSharedFood = null)
+    }
+
+    fun dismissImportedSharedFood() {
+        _uiState.value = _uiState.value.copy(importedSharedFood = null)
     }
 
     // --- Supplement (BAD) ---

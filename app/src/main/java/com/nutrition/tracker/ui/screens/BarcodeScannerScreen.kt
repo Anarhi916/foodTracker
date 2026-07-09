@@ -20,7 +20,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -73,6 +72,7 @@ fun BarcodeScannerScreen(
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             if (hasCameraPermission) {
+                // Full-screen camera preview
                 AndroidView(
                     factory = { ctx ->
                         val previewView = PreviewView(ctx)
@@ -122,19 +122,6 @@ fun BarcodeScannerScreen(
                     },
                     modifier = Modifier.fillMaxSize()
                 )
-
-                // Viewfinder frame
-                Box(modifier = Modifier.align(Alignment.Center)) {
-                    Surface(
-                        modifier = Modifier.size(width = 260.dp, height = 160.dp),
-                        color = Color.Transparent,
-                        shape = MaterialTheme.shapes.medium,
-                        border = BorderStroke(
-                            width = 3.dp,
-                            color = if (readyToScan) MaterialTheme.colorScheme.primary else Color.White
-                        )
-                    ) {}
-                }
 
                 // Scan button
                 Button(
@@ -188,7 +175,8 @@ private fun processBarcode(imageProxy: ImageProxy, onBarcode: (String) -> Unit) 
                         (barcode.format == Barcode.FORMAT_EAN_13 ||
                          barcode.format == Barcode.FORMAT_EAN_8 ||
                          barcode.format == Barcode.FORMAT_UPC_A ||
-                         barcode.format == Barcode.FORMAT_UPC_E)
+                         barcode.format == Barcode.FORMAT_UPC_E ||
+                         barcode.format == Barcode.FORMAT_QR_CODE)
                     ) {
                         onBarcode(rawValue)
                         break
