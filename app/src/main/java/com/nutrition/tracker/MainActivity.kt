@@ -2,9 +2,9 @@ package com.nutrition.tracker
 
 import android.content.Intent
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -27,7 +27,7 @@ import com.nutrition.tracker.viewmodel.MainViewModel
 import com.nutrition.tracker.viewmodel.OnboardingViewModel
 import kotlinx.coroutines.flow.first
 
-class MainActivity : ComponentActivity() {
+class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -71,7 +71,7 @@ fun NutritionTrackerApp(intent: Intent? = null) {
     importFood?.let { food ->
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { importFood = null },
-            title = { androidx.compose.material3.Text("Добавить продукт?") },
+            title = { androidx.compose.material3.Text(androidx.compose.ui.res.stringResource(com.nutrition.tracker.R.string.add_food)) },
             text = {
                 androidx.compose.foundation.layout.Column {
                     androidx.compose.material3.Text(
@@ -102,7 +102,7 @@ fun NutritionTrackerApp(intent: Intent? = null) {
             },
             dismissButton = {
                 androidx.compose.material3.TextButton(onClick = { importFood = null; importDone = true }) {
-                    androidx.compose.material3.Text("Отмена")
+                    androidx.compose.material3.Text(androidx.compose.ui.res.stringResource(com.nutrition.tracker.R.string.cancel))
                 }
             }
         )

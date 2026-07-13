@@ -14,11 +14,15 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.nutrition.tracker.R
 import com.nutrition.tracker.data.model.NutrientData
+import com.nutrition.tracker.util.UnitSystem
 import com.nutrition.tracker.viewmodel.MainViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -28,15 +32,15 @@ fun EditProfileScreen(
     onBack: () -> Unit
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
-    val tabs = listOf("Профиль", "Дневные нормы")
+    val tabs = listOf(stringResource(R.string.profile), stringResource(R.string.daily_targets))
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Профиль") },
+                title = { Text(stringResource(R.string.profile)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -66,6 +70,7 @@ fun EditProfileScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ProfileDataTab(
     viewModel: MainViewModel,
@@ -73,22 +78,55 @@ private fun ProfileDataTab(
 ) {
     val profile by viewModel.userProfile.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
 
-    var gender by remember { mutableStateOf("Мужской") }
+    var gender by remember { mutableStateOf("male") }
     var age by remember { mutableStateOf("") }
-    var weight by remember { mutableStateOf("") }
-    var height by remember { mutableStateOf("") }
+    var weight by remember { mutableStateOf("") }       // kg or lb, per unitSystem
+    var heightCm by remember { mutableStateOf("") }
+    var heightFeet by remember { mutableStateOf("") }
+    var heightInches by remember { mutableStateOf("") }
     var goalsText by remember { mutableStateOf("") }
     var localError by remember { mutableStateOf<String?>(null) }
     var initialized by remember { mutableStateOf(false) }
+    var unitSystem by remember { mutableStateOf(UnitSystem.current(context)) }
+    val isImperial = unitSystem == UnitSystem.IMPERIAL
+
+    val invalidInputMsg = stringResource(R.string.enter_valid_age_weight_and_height)
+    val describeGoalsMsg = stringResource(R.string.describe_your_goals)
+
+    // Fill weight/height text fields from canonical kg/cm in the given unit.
+    fun fillBody(weightKg: Double, cm: Double, unit: UnitSystem) {
+        if (unit == UnitSystem.IMPERIAL) {
+            weight = Math.round(com.nutrition.tracker.util.BodyUnits.kgToPounds(weightKg)).toString()
+            val (ft, inch) = com.nutrition.tracker.util.BodyUnits.cmToFeetInches(cm)
+            heightFeet = ft.toString(); heightInches = inch.toString()
+        } else {
+            weight = weightKg.toInt().toString()
+            heightCm = cm.toInt().toString()
+        }
+    }
+
+    // Read current fields interpreted in `unit` → canonical (kg, cm) or null.
+    fun currentCanonical(unit: UnitSystem): Pair<Double?, Double?> {
+        val w = weight.replace(",", ".").toDoubleOrNull()
+        return if (unit == UnitSystem.IMPERIAL) {
+            val ft = heightFeet.replace(",", ".").toDoubleOrNull()
+            val inch = (if (heightInches.isBlank()) "0" else heightInches).replace(",", ".").toDoubleOrNull()
+            val kg = w?.let { com.nutrition.tracker.util.BodyUnits.poundsToKg(it) }
+            val cm = if (ft != null && inch != null) com.nutrition.tracker.util.BodyUnits.feetInchesToCm(ft, inch) else null
+            kg to cm
+        } else {
+            w to heightCm.replace(",", ".").toDoubleOrNull()
+        }
+    }
 
     LaunchedEffect(profile) {
         if (!initialized && profile != null) {
-            gender = profile!!.gender
+            gender = com.nutrition.tracker.util.Gender.fromStored(profile!!.gender).storedValue
             age = profile!!.age.toString()
-            weight = profile!!.weightKg.toInt().toString()
-            height = profile!!.heightCm.toInt().toString()
             goalsText = profile!!.goalsText
+            fillBody(profile!!.weightKg, profile!!.heightCm, unitSystem)
             initialized = true
         }
     }
@@ -100,66 +138,132 @@ private fun ProfileDataTab(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Gender
-        Text("Пол", style = MaterialTheme.typography.titleMedium)
+        // Language — applied instantly in-app via AppCompat per-app locale.
+        com.nutrition.tracker.ui.components.LanguageSelector()
+
+        // Unit system
+        Text(stringResource(R.string.units_setting), style = MaterialTheme.typography.titleMedium)
         Row(
             modifier = Modifier.selectableGroup(),
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            listOf("Мужской", "Женский").forEach { g ->
+            listOf(
+                UnitSystem.METRIC to stringResource(R.string.units_metric),
+                UnitSystem.IMPERIAL to stringResource(R.string.units_imperial)
+            ).forEach { (option, label) ->
                 Row(
                     modifier = Modifier
                         .selectable(
-                            selected = gender == g,
-                            onClick = { gender = g },
+                            selected = unitSystem == option,
+                            onClick = {
+                                if (unitSystem != option) {
+                                    // Convert current values into the new unit so the
+                                    // displayed measurement stays the same.
+                                    val (kg, cm) = currentCanonical(unitSystem)
+                                    unitSystem = option
+                                    UnitSystem.set(context, option)
+                                    if (kg != null && cm != null) fillBody(kg, cm, option)
+                                }
+                            },
                             role = Role.RadioButton
                         ),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    RadioButton(selected = gender == g, onClick = null)
+                    RadioButton(selected = unitSystem == option, onClick = null)
                     Spacer(Modifier.width(8.dp))
-                    Text(g)
+                    Text(label)
+                }
+            }
+        }
+
+        // Gender
+        Text(stringResource(R.string.sex), style = MaterialTheme.typography.titleMedium)
+        Row(
+            modifier = Modifier.selectableGroup(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            listOf(
+                com.nutrition.tracker.util.Gender.MALE to stringResource(R.string.male),
+                com.nutrition.tracker.util.Gender.FEMALE to stringResource(R.string.female)
+            ).forEach { (genderOption, label) ->
+                Row(
+                    modifier = Modifier
+                        .selectable(
+                            selected = gender == genderOption.storedValue,
+                            onClick = { gender = genderOption.storedValue },
+                            role = Role.RadioButton
+                        ),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RadioButton(selected = gender == genderOption.storedValue, onClick = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(label)
                 }
             }
         }
 
         // Age
+        Text(stringResource(R.string.age_years), style = MaterialTheme.typography.titleMedium)
         OutlinedTextField(
             value = age,
             onValueChange = { age = it },
-            label = { Text("Возраст (лет)") },
+            placeholder = { Text(stringResource(R.string.age_years)) },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
         )
 
         // Weight
+        Text(stringResource(if (isImperial) R.string.weight_lb else R.string.weight_kg), style = MaterialTheme.typography.titleMedium)
         OutlinedTextField(
             value = weight,
             onValueChange = { weight = it },
-            label = { Text("Вес (кг)") },
+            placeholder = { Text(stringResource(if (isImperial) R.string.weight_lb else R.string.weight_kg)) },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
         )
 
         // Height
-        OutlinedTextField(
-            value = height,
-            onValueChange = { height = it },
-            label = { Text("Рост (см)") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
+        if (isImperial) {
+            Text(stringResource(R.string.height_ft_in), style = MaterialTheme.typography.titleMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = heightFeet,
+                    onValueChange = { heightFeet = it },
+                    placeholder = { Text(stringResource(R.string.feet)) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    modifier = Modifier.weight(1f)
+                )
+                OutlinedTextField(
+                    value = heightInches,
+                    onValueChange = { heightInches = it },
+                    placeholder = { Text(stringResource(R.string.inches)) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        } else {
+            Text(stringResource(R.string.height_cm), style = MaterialTheme.typography.titleMedium)
+            OutlinedTextField(
+                value = heightCm,
+                onValueChange = { heightCm = it },
+                placeholder = { Text(stringResource(R.string.height_cm)) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
 
         // Goals
+        Text(stringResource(R.string.goals_activity_workouts), style = MaterialTheme.typography.titleMedium)
         OutlinedTextField(
             value = goalsText,
             onValueChange = { goalsText = it },
-            label = { Text("Цели, физическая активность, тренировки") },
             placeholder = {
-                Text("Опишите желаемые результаты, уровень физической активности в течение дня, тренировки...")
+                Text(stringResource(R.string.goals_placeholder))
             },
             modifier = Modifier
                 .fillMaxWidth()
@@ -188,14 +292,13 @@ private fun ProfileDataTab(
         Button(
             onClick = {
                 val a = age.toIntOrNull()
-                val w = weight.toDoubleOrNull()
-                val h = height.toDoubleOrNull()
+                val (w, h) = currentCanonical(unitSystem)
                 if (a == null || w == null || h == null) {
-                    localError = "Введите корректные возраст, вес и рост"
+                    localError = invalidInputMsg
                     return@Button
                 }
                 if (goalsText.isBlank()) {
-                    localError = "Опишите ваши цели"
+                    localError = describeGoalsMsg
                     return@Button
                 }
                 localError = null
@@ -212,9 +315,9 @@ private fun ProfileDataTab(
                     color = MaterialTheme.colorScheme.onPrimary
                 )
                 Spacer(Modifier.width(8.dp))
-                Text("Пересчитываем нормы...")
+                Text(stringResource(R.string.recalculating_targets))
             } else {
-                Text("Сохранить и пересчитать", style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.save_and_recalculate), style = MaterialTheme.typography.titleMedium)
             }
         }
 
@@ -244,7 +347,7 @@ private fun DailyNormsTab(viewModel: MainViewModel) {
             contentAlignment = Alignment.Center
         ) {
             Text(
-                "Нормы ещё не рассчитаны.\nЗаполните профиль и нажмите «Сохранить и пересчитать».",
+                stringResource(R.string.norms_not_calculated_full),
                 style = MaterialTheme.typography.bodyLarge,
                 modifier = Modifier.padding(32.dp)
             )
@@ -267,7 +370,7 @@ private fun DailyNormsTab(viewModel: MainViewModel) {
                     onClick = { isEditing = false },
                     modifier = Modifier.padding(end = 8.dp)
                 ) {
-                    Text("Отмена")
+                    Text(stringResource(R.string.cancel))
                 }
                 Button(
                     onClick = {
@@ -282,13 +385,13 @@ private fun DailyNormsTab(viewModel: MainViewModel) {
                 ) {
                     Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("Сохранить")
+                    Text(stringResource(R.string.save))
                 }
             } else {
                 OutlinedButton(onClick = { isEditing = true }) {
                     Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("Редактировать")
+                    Text(stringResource(R.string.edit))
                 }
             }
         }
@@ -304,10 +407,10 @@ private fun DailyNormsTab(viewModel: MainViewModel) {
             val allNutrients = currentNorms.allNutrientsList()
 
             // Group headers
-            NormSectionHeader("БЖУ и Калории")
+            NormSectionHeader(stringResource(R.string.macros_and_calories))
             allNutrients.take(5).forEach { (key, label, value) ->
                 NormRow(
-                    label = label,
+                    label = stringResource(label),
                     value = value,
                     isEditing = isEditing,
                     editValue = editedValues[key] ?: "",
@@ -316,10 +419,10 @@ private fun DailyNormsTab(viewModel: MainViewModel) {
             }
 
             Spacer(Modifier.height(8.dp))
-            NormSectionHeader("Витамины")
+            NormSectionHeader(stringResource(R.string.vitamins))
             allNutrients.drop(5).take(13).forEach { (key, label, value) ->
                 NormRow(
-                    label = label,
+                    label = stringResource(label),
                     value = value,
                     isEditing = isEditing,
                     editValue = editedValues[key] ?: "",
@@ -328,10 +431,10 @@ private fun DailyNormsTab(viewModel: MainViewModel) {
             }
 
             Spacer(Modifier.height(8.dp))
-            NormSectionHeader("Минералы и микроэлементы")
+            NormSectionHeader(stringResource(R.string.minerals_and_trace_elements))
             allNutrients.drop(18).forEach { (key, label, value) ->
                 NormRow(
-                    label = label,
+                    label = stringResource(label),
                     value = value,
                     isEditing = isEditing,
                     editValue = editedValues[key] ?: "",

@@ -72,11 +72,12 @@ class NutritionRepository(
     }
 
     suspend fun calculateAndSaveNorms(gender: String, age: Int, weight: Double, height: Double, goals: String): NutrientData {
+        val genderForPrompt = com.nutrition.tracker.util.Gender.fromStored(gender).promptValue
         val prompt = """
 You are a professional nutrition expert. Based on the following user data, calculate the recommended DAILY nutritional intake to achieve their goals.
 
 User data:
-- Gender: $gender
+- Gender: $genderForPrompt
 - Age: $age years
 - Weight: $weight kg
 - Height: $height cm
@@ -198,7 +199,7 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
 
     suspend fun updateCachedFoodFull(id: Long, keyOriginal: String, keyEn: String, nutrients: NutrientData) {
         val normalized = normalizeKey(keyOriginal)
-        db.foodCacheDao().updateKeys(id, keyOriginal, normalized, keyEn)
+        db.foodCacheDao().updateKeys(id, keyOriginal, normalized, keyEn, normalizeKey(keyEn))
         db.foodCacheDao().updateNutrients(id, gson.toJson(nutrients))
     }
 
@@ -206,13 +207,14 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
         val normalized = normalizeKey(keyOriginal)
         val normalizedEn = normalizeKey(keyEn)
         // Don't duplicate
-        val existing = db.foodCacheDao().findByKeyEn(normalizedEn)
+        val existing = db.foodCacheDao().findByKeyEnNormalized(normalizedEn)
         if (existing != null) throw Exception("Продукт с таким английским названием уже существует")
         db.foodCacheDao().insert(
             FoodCacheEntity(
                 keyOriginal = keyOriginal,
                 keyNormalized = normalized,
                 keyEn = keyEn,
+                keyEnNormalized = normalizedEn,
                 nutrientsPer100gJson = gson.toJson(nutrients)
             )
         )
@@ -226,8 +228,8 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
         val normalized = normalizeKey(key)
         // First try exact normalized key match
         val entry = db.foodCacheDao().findByNormalizedKey(normalized)
-        // If not found, try matching by English key
-            ?: db.foodCacheDao().findByKeyEn(normalized)
+        // If not found, try the language-neutral normalized English key
+            ?: db.foodCacheDao().findByKeyEnNormalized(normalized)
             ?: return null
         val nutrients = gson.fromJson(entry.nutrientsPer100gJson, NutrientData::class.java)
         return entry to nutrients
@@ -235,13 +237,13 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
 
     private suspend fun saveToCache(keyOriginal: String, keyEn: String, nutrientsPer100g: NutrientData) {
         val normalized = normalizeKey(keyOriginal)
+        val normalizedEn = normalizeKey(keyEn)
         // Don't duplicate if same normalized key already exists
         val existingByKey = db.foodCacheDao().findByNormalizedKey(normalized)
         if (existingByKey != null) return
-        // For non-technical keys, also check by English name to avoid product duplicates
+        // For non-technical keys, also check by normalized English name to avoid product duplicates
         if (!keyOriginal.startsWith("barcode:") && !keyOriginal.startsWith("supplement:")) {
-            val normalizedEn = normalizeKey(keyEn)
-            val existingByEn = db.foodCacheDao().findByKeyEn(normalizedEn)
+            val existingByEn = db.foodCacheDao().findByKeyEnNormalized(normalizedEn)
             if (existingByEn != null) return
         }
         db.foodCacheDao().insert(
@@ -249,6 +251,7 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
                 keyOriginal = keyOriginal,
                 keyNormalized = normalized,
                 keyEn = keyEn,
+                keyEnNormalized = normalizedEn,
                 nutrientsPer100gJson = gson.toJson(nutrientsPer100g)
             )
         )
@@ -266,7 +269,10 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
     private val dairyWithFatPercentKeywords: List<String> = listOf(
         "творог", "творожн", "сирок", "сырок", "сир знежирен", "сир нежирн", "сир кисломолочн",
         "молоко", "сметана", "кефир", "ряженка", "ряжанка", "йогурт", "сливки", "вершки",
-        "простокваша", "ацидофилин", "айран", "тан", "мацони", "снежок", "бифидок"
+        "простокваша", "ацидофилин", "айран", "тан", "мацони", "снежок", "бифидок",
+        // English/other-language equivalents so the GOST correction fires regardless of UI language
+        "cottage cheese", "quark", "curd", "milk", "sour cream", "kefir",
+        "ryazhenka", "yogurt", "yoghurt", "cream", "buttermilk"
     )
 
     /** Extracts the fat percentage from a product name ("творог 5%" → 5.0). */
@@ -288,15 +294,15 @@ Calculate daily norms and return ONLY a JSON object with this EXACT structure (a
     }
 
     /** True if the name is a dairy product with an explicit fat % (GOST standard).
-     * Hard cheeses ("сыр 45%") return false — there % is fat in dry matter. */
-    private fun isDairyWithFatPercent(foodName: String): Boolean {
-        val lower = foodName.lowercase()
+     * Checks both the localized name and the English name. */
+    private fun isDairyWithFatPercent(foodName: String, englishName: String? = null): Boolean {
+        val lower = (foodName + " " + (englishName ?: "")).lowercase()
         val isHardCheese = (lower.contains("сыр") || lower.contains("сир") ||
                             (lower.contains("cheese") && !lower.contains("cottage")))
                            && dairyWithFatPercentKeywords.none { lower.contains(it) }
         if (isHardCheese) return false
         if (dairyWithFatPercentKeywords.none { lower.contains(it) }) return false
-        return extractFatPercent(foodName) != null
+        return extractFatPercent(foodName) != null || extractFatPercent(englishName ?: "") != null
     }
 
     /**
@@ -540,22 +546,8 @@ Rules:
             .filter { it.isNotBlank() }
 
         return items.map { item ->
-            // Extract weight: number followed by optional space and unit (г, гр, грамм, g, ml, мл, кг, kg)
-            val weightRegex = Regex("""(\d+(?:[.,]\d+)?)\s*(г|гр|грамм|g|ml|мл|кг|kg)\b""", RegexOption.IGNORE_CASE)
-            val match = weightRegex.find(item)
-            val weight = if (match != null) {
-                var w = match.groupValues[1].replace(",", ".").toDoubleOrNull() ?: 0.0
-                val unit = match.groupValues[2].lowercase()
-                if (unit == "кг" || unit == "kg") w *= 1000
-                w
-            } else 0.0
-            // Food name = item minus the weight part
-            val name = if (match != null) {
-                item.removeRange(match.range).trim()
-            } else {
-                item.trim()
-            }
-            name to weight
+            // Centralized multi-language + metric/imperial weight extraction.
+            com.nutrition.tracker.util.WeightParser.parse(item)
         }.filter { it.first.isNotBlank() }
     }
 
@@ -896,12 +888,13 @@ Return ONLY a JSON array of English strings:
                 if (w > 0) "$name ${w.toInt()}г" else name
             }
 
+        val uiLang = com.nutrition.tracker.util.AppLocale.languageEnglishName
         val identifyPrompt = """
-Определи ВСЕ продукты и их вес из описания. Описание может быть на русском, украинском или другом языке.
+Определи ВСЕ продукты и их вес из описания. Описание может быть на любом языке.
 Если указано количество штук — рассчитай общий вес. Если вес не указан — оцени типичную порцию.
 
 ВАЖНО:
-- food_name — сохрани название НА ЯЗЫКЕ ВВОДА (не переводи на другой язык)
+- food_name — название продукта на языке "$uiLang" (this is the app's UI language; translate the product name into $uiLang so it displays consistently)
 - food_name_en — ТОЧНЫЙ перевод на английский для поиска в USDA базе данных
 
 Примеры правильного перевода:
@@ -1038,7 +1031,7 @@ Return ONLY a JSON array of English strings:
 Описание: $descriptionForAi
 
 Верни ТОЛЬКО JSON массив (даже если продукт один):
-[{"food_name": "<название НА ЯЗЫКЕ ВВОДА>", "food_name_en": "<EXACT English translation for USDA search>", "weight_grams": <число>}]
+[{"food_name": "<product name in the app UI language>", "food_name_en": "<EXACT English translation for USDA search>", "weight_grams": <число>}]
 """.trimIndent()
 
         val identifyText = callOpenRouterWithRetry(
@@ -1058,7 +1051,7 @@ Return ONLY a JSON array of English strings:
         for (id in identities) {
             // Strip weight from AI food_name — AI sometimes includes it
             val rawName = id.foodName.ifBlank { descriptionForAi }
-            val nameRu = rawName.replace(Regex("""\s*\d+(?:[.,]\d+)?\s*(г|гр|грамм|g|ml|мл|кг|kg)\b""", RegexOption.IGNORE_CASE), "").trim()
+            val nameRu = com.nutrition.tracker.util.WeightParser.parse(rawName).first
             val nameEn = id.foodNameEn.ifBlank { id.foodName }
             val weight = if (id.weightGrams > 0) id.weightGrams else 100.0
 
@@ -1087,7 +1080,7 @@ Return ONLY a JSON array of English strings:
                 // For dairy with explicit % fat (e.g. "творог 5%"), strip the percent from the
                 // English query — USDA doesn't index RU/UA fat grades, so we search the base
                 // product and later correct macros via AI.
-                val isDairyWithPercent = isDairyWithFatPercent(item.foodNameRu)
+                val isDairyWithPercent = isDairyWithFatPercent(item.foodNameRu, item.foodNameEn)
                 val foodNameEnForSearch = run {
                     var name = if (isDairyWithPercent) stripFatPercent(item.foodNameEn) else item.foodNameEn
                     // Normalise British English → American English so USDA finds the right entry
@@ -1505,7 +1498,7 @@ Return ONLY a JSON object:
             val per100g = item.nutrientsPer100g ?: continue
             // For dairy with explicit %, override macros via AI using GOST reference data
             // (USDA gave us micronutrients for the base product, but macros for the wrong fat grade).
-            val correctedPer100g = if (isDairyWithFatPercent(item.foodNameRu)) {
+            val correctedPer100g = if (isDairyWithFatPercent(item.foodNameRu, item.foodNameEn)) {
                 correctDairyMacrosWithAI(per100g, item.foodNameRu).also { item.nutrientsPer100g = it }
             } else per100g
             try {
@@ -1729,18 +1722,19 @@ Return ONLY JSON, e.g.: {"vitamin_a": 45, "calcium": 11}
 
     suspend fun identifyFoodFromPhoto(imageBytes: ByteArray, usePaidModel: Boolean = false): Pair<String, Double> {
         val base64 = Base64.encodeToString(imageBytes, Base64.NO_WRAP)
+        val uiLang = com.nutrition.tracker.util.AppLocale.languageEnglishName
         val prompt = """
 Ты профессиональный диетолог. Посмотри на фото еды и определи:
-1. Название блюда/продуктов НА РУССКОМ языке (подробно, включая ингредиенты)
+1. Название блюда/продуктов на языке "$uiLang" (подробно, включая ингредиенты)
 2. Оценку общего веса порции в граммах
 
-Примеры названий:
+Примеры названий (на языке $uiLang):
 - "салат из помидоров и огурцов с майонезом"
 - "гречка с куриной котлетой"
 - "борщ со сметаной"
 
 Верни ТОЛЬКО JSON:
-{"food_name": "<название на русском>", "weight_grams": <число>}
+{"food_name": "<dish name in $uiLang>", "weight_grams": <число>}
 """.trimIndent()
 
         val contentParts = listOf(
@@ -1770,14 +1764,15 @@ Return ONLY JSON, e.g.: {"vitamin_a": 45, "calcium": 11}
 
     suspend fun identifyAndAnalyzeFoodFromPhoto(imageBytes: ByteArray): FoodAnalysisResult {
         val base64 = Base64.encodeToString(imageBytes, Base64.NO_WRAP)
+        val uiLang = com.nutrition.tracker.util.AppLocale.languageEnglishName
         val prompt = """
 You are a professional nutritionist. Look at this food photo and:
-1. Identify the dish/food name IN RUSSIAN (detailed, including ingredients)
+1. Identify the dish/food name IN ${uiLang.uppercase()} (detailed, including ingredients)
 2. Estimate total portion weight in grams
 3. Provide nutritional values PER 100 GRAMS for this complete dish
 
 Return ONLY a JSON object:
-{"food_name": "<название на русском>", "food_name_en": "<English translation>", "weight_grams": <number>,
+{"food_name": "<dish name in $uiLang>", "food_name_en": "<English translation>", "weight_grams": <number>,
 "calories": <kcal>, "protein": <g>, "fat": <g>,
 "saturated_fat": <g>, "monounsaturated_fat": <g>, "polyunsaturated_fat": <g>, "cholesterol": <mg>,
 "carbs": <g>, "fiber": <g>,
@@ -1859,14 +1854,15 @@ Return ONLY a JSON object:
 
     suspend fun analyzeFoodPhoto(imageBytes: ByteArray): FoodAnalysisResult {
         val base64 = Base64.encodeToString(imageBytes, Base64.NO_WRAP)
+        val uiLang = com.nutrition.tracker.util.AppLocale.languageEnglishName
         val prompt = """
 Ты профессиональный диетолог. Проанализируй фото еды. Определи продукты и оцени размер порции.
-Название еды напиши НА РУССКОМ языке. Оцени общий вес порции в граммах.
+Название еды напиши на языке "$uiLang". Оцени общий вес порции в граммах.
 Все нутриенты укажи В РАСЧЁТЕ НА 100 ГРАММОВ продукта.
 
 Верни ТОЛЬКО JSON объект с ТОЧНО такой структурой:
 {
-  "food_name": "<описание еды НА РУССКОМ>",
+  "food_name": "<dish description in $uiLang>",
   "weight_grams": <оценка общего веса порции в граммах>,
   "nutrients": {
     "calories": <на 100г>, "protein": <на 100г>, "fat": <на 100г>, "carbs": <на 100г>, "fiber": <на 100г>,
@@ -1976,7 +1972,7 @@ Return ONLY a JSON object with these fields:
         )
 
         // For dairy with explicit %, override macros via AI using GOST reference data
-        val correctedPer100g = if (isDairyWithFatPercent(dishName)) {
+        val correctedPer100g = if (isDairyWithFatPercent(dishName, nameEn)) {
             correctDairyMacrosWithAI(per100g, dishName)
         } else per100g
 

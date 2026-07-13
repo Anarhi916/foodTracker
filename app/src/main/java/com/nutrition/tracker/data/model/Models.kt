@@ -109,49 +109,49 @@ data class NutrientData(
         iodine = iodine * factor
     )
 
-    fun macrosList(): List<Pair<String, Double>> = listOf(
-        "Калории (ккал)" to calories,
-        "Белки (г)" to protein,
-        "Жиры (г)" to fat,
-        "Углеводы (г)" to carbs,
-        "Клетчатка (г)" to fiber
+    fun macrosList(): List<Pair<Int, Double>> = listOf(
+        com.nutrition.tracker.R.string.calories_kcal to calories,
+        com.nutrition.tracker.R.string.protein_g to protein,
+        com.nutrition.tracker.R.string.fat_g to fat,
+        com.nutrition.tracker.R.string.carbs_g to carbs,
+        com.nutrition.tracker.R.string.fiber_g to fiber
     )
 
-    fun fatDetailsList(): List<Pair<String, Double>> = listOf(
-        "Насыщенные жиры (г)" to saturatedFat,
-        "Мононенасыщенные жиры (г)" to monounsaturatedFat,
-        "Полиненасыщенные жиры (г)" to polyunsaturatedFat,
-        "Холестерин (мг)" to cholesterol
+    fun fatDetailsList(): List<Pair<Int, Double>> = listOf(
+        com.nutrition.tracker.R.string.saturated_fat_g to saturatedFat,
+        com.nutrition.tracker.R.string.monounsaturated_fat_g to monounsaturatedFat,
+        com.nutrition.tracker.R.string.polyunsaturated_fat_g to polyunsaturatedFat,
+        com.nutrition.tracker.R.string.cholesterol_mg to cholesterol
     )
 
-    fun vitaminsList(): List<Pair<String, Double>> = listOf(
-        "Витамин A (мкг)" to vitaminA,
-        "Витамин B1 (мг)" to vitaminB1,
-        "Витамин B2 (мг)" to vitaminB2,
-        "Витамин B3 (мг)" to vitaminB3,
-        "Витамин B5 (мг)" to vitaminB5,
-        "Витамин B6 (мг)" to vitaminB6,
-        "Витамин B7 (мкг)" to vitaminB7,
-        "Витамин B9 (мкг)" to vitaminB9,
-        "Витамин B12 (мкг)" to vitaminB12,
-        "Витамин C (мг)" to vitaminC,
-        "Витамин D (мкг)" to vitaminD,
-        "Витамин E (мг)" to vitaminE,
-        "Витамин K (мкг)" to vitaminK
+    fun vitaminsList(): List<Pair<Int, Double>> = listOf(
+        com.nutrition.tracker.R.string.vitamin_a_mcg to vitaminA,
+        com.nutrition.tracker.R.string.vitamin_b1_mg to vitaminB1,
+        com.nutrition.tracker.R.string.vitamin_b2_mg to vitaminB2,
+        com.nutrition.tracker.R.string.vitamin_b3_mg to vitaminB3,
+        com.nutrition.tracker.R.string.vitamin_b5_mg to vitaminB5,
+        com.nutrition.tracker.R.string.vitamin_b6_mg to vitaminB6,
+        com.nutrition.tracker.R.string.vitamin_b7_mcg to vitaminB7,
+        com.nutrition.tracker.R.string.vitamin_b9_mcg to vitaminB9,
+        com.nutrition.tracker.R.string.vitamin_b12_mcg to vitaminB12,
+        com.nutrition.tracker.R.string.vitamin_c_mg to vitaminC,
+        com.nutrition.tracker.R.string.vitamin_d_mcg to vitaminD,
+        com.nutrition.tracker.R.string.vitamin_e_mg to vitaminE,
+        com.nutrition.tracker.R.string.vitamin_k_mcg to vitaminK
     )
 
-    fun mineralsList(): List<Pair<String, Double>> = listOf(
-        "Кальций (мг)" to calcium,
-        "Железо (мг)" to iron,
-        "Магний (мг)" to magnesium,
-        "Фосфор (мг)" to phosphorus,
-        "Калий (мг)" to potassium,
-        "Натрий (мг)" to sodium,
-        "Цинк (мг)" to zinc,
-        "Медь (мг)" to copper,
-        "Марганец (мг)" to manganese,
-        "Селен (мкг)" to selenium,
-        "Йод (мкг)" to iodine
+    fun mineralsList(): List<Pair<Int, Double>> = listOf(
+        com.nutrition.tracker.R.string.calcium_mg to calcium,
+        com.nutrition.tracker.R.string.iron_mg to iron,
+        com.nutrition.tracker.R.string.magnesium_mg to magnesium,
+        com.nutrition.tracker.R.string.phosphorus_mg to phosphorus,
+        com.nutrition.tracker.R.string.potassium_mg to potassium,
+        com.nutrition.tracker.R.string.sodium_mg to sodium,
+        com.nutrition.tracker.R.string.zinc_mg to zinc,
+        com.nutrition.tracker.R.string.copper_mg to copper,
+        com.nutrition.tracker.R.string.manganese_mg to manganese,
+        com.nutrition.tracker.R.string.selenium_mcg to selenium,
+        com.nutrition.tracker.R.string.iodine_mcg to iodine
     )
 
     fun getByKey(key: String): Double = when (key) {
@@ -228,40 +228,40 @@ data class NutrientData(
         else -> this
     }
 
-    fun allNutrientsList(): List<Triple<String, String, Double>> = listOf(
-        Triple("calories", "Калории (ккал)", calories),
-        Triple("protein", "Белки (г)", protein),
-        Triple("fat", "Жиры (г)", fat),
-        Triple("saturatedFat", "Насыщенные жиры (г)", saturatedFat),
-        Triple("monounsaturatedFat", "Мононенасыщенные жиры (г)", monounsaturatedFat),
-        Triple("polyunsaturatedFat", "Полиненасыщенные жиры (г)", polyunsaturatedFat),
-        Triple("cholesterol", "Холестерин (мг)", cholesterol),
-        Triple("carbs", "Углеводы (г)", carbs),
-        Triple("fiber", "Клетчатка (г)", fiber),
-        Triple("vitaminA", "Витамин A (мкг)", vitaminA),
-        Triple("vitaminB1", "Витамин B1 (мг)", vitaminB1),
-        Triple("vitaminB2", "Витамин B2 (мг)", vitaminB2),
-        Triple("vitaminB3", "Витамин B3 (мг)", vitaminB3),
-        Triple("vitaminB5", "Витамин B5 (мг)", vitaminB5),
-        Triple("vitaminB6", "Витамин B6 (мг)", vitaminB6),
-        Triple("vitaminB7", "Витамин B7 (мкг)", vitaminB7),
-        Triple("vitaminB9", "Витамин B9 (мкг)", vitaminB9),
-        Triple("vitaminB12", "Витамин B12 (мкг)", vitaminB12),
-        Triple("vitaminC", "Витамин C (мг)", vitaminC),
-        Triple("vitaminD", "Витамин D (мкг)", vitaminD),
-        Triple("vitaminE", "Витамин E (мг)", vitaminE),
-        Triple("vitaminK", "Витамин K (мкг)", vitaminK),
-        Triple("calcium", "Кальций (мг)", calcium),
-        Triple("iron", "Железо (мг)", iron),
-        Triple("magnesium", "Магний (мг)", magnesium),
-        Triple("phosphorus", "Фосфор (мг)", phosphorus),
-        Triple("potassium", "Калий (мг)", potassium),
-        Triple("sodium", "Натрий (мг)", sodium),
-        Triple("zinc", "Цинк (мг)", zinc),
-        Triple("copper", "Медь (мг)", copper),
-        Triple("manganese", "Марганец (мг)", manganese),
-        Triple("selenium", "Селен (мкг)", selenium),
-        Triple("iodine", "Йод (мкг)", iodine)
+    fun allNutrientsList(): List<Triple<String, Int, Double>> = listOf(
+        Triple("calories", com.nutrition.tracker.R.string.calories_kcal, calories),
+        Triple("protein", com.nutrition.tracker.R.string.protein_g, protein),
+        Triple("fat", com.nutrition.tracker.R.string.fat_g, fat),
+        Triple("saturatedFat", com.nutrition.tracker.R.string.saturated_fat_g, saturatedFat),
+        Triple("monounsaturatedFat", com.nutrition.tracker.R.string.monounsaturated_fat_g, monounsaturatedFat),
+        Triple("polyunsaturatedFat", com.nutrition.tracker.R.string.polyunsaturated_fat_g, polyunsaturatedFat),
+        Triple("cholesterol", com.nutrition.tracker.R.string.cholesterol_mg, cholesterol),
+        Triple("carbs", com.nutrition.tracker.R.string.carbs_g, carbs),
+        Triple("fiber", com.nutrition.tracker.R.string.fiber_g, fiber),
+        Triple("vitaminA", com.nutrition.tracker.R.string.vitamin_a_mcg, vitaminA),
+        Triple("vitaminB1", com.nutrition.tracker.R.string.vitamin_b1_mg, vitaminB1),
+        Triple("vitaminB2", com.nutrition.tracker.R.string.vitamin_b2_mg, vitaminB2),
+        Triple("vitaminB3", com.nutrition.tracker.R.string.vitamin_b3_mg, vitaminB3),
+        Triple("vitaminB5", com.nutrition.tracker.R.string.vitamin_b5_mg, vitaminB5),
+        Triple("vitaminB6", com.nutrition.tracker.R.string.vitamin_b6_mg, vitaminB6),
+        Triple("vitaminB7", com.nutrition.tracker.R.string.vitamin_b7_mcg, vitaminB7),
+        Triple("vitaminB9", com.nutrition.tracker.R.string.vitamin_b9_mcg, vitaminB9),
+        Triple("vitaminB12", com.nutrition.tracker.R.string.vitamin_b12_mcg, vitaminB12),
+        Triple("vitaminC", com.nutrition.tracker.R.string.vitamin_c_mg, vitaminC),
+        Triple("vitaminD", com.nutrition.tracker.R.string.vitamin_d_mcg, vitaminD),
+        Triple("vitaminE", com.nutrition.tracker.R.string.vitamin_e_mg, vitaminE),
+        Triple("vitaminK", com.nutrition.tracker.R.string.vitamin_k_mcg, vitaminK),
+        Triple("calcium", com.nutrition.tracker.R.string.calcium_mg, calcium),
+        Triple("iron", com.nutrition.tracker.R.string.iron_mg, iron),
+        Triple("magnesium", com.nutrition.tracker.R.string.magnesium_mg, magnesium),
+        Triple("phosphorus", com.nutrition.tracker.R.string.phosphorus_mg, phosphorus),
+        Triple("potassium", com.nutrition.tracker.R.string.potassium_mg, potassium),
+        Triple("sodium", com.nutrition.tracker.R.string.sodium_mg, sodium),
+        Triple("zinc", com.nutrition.tracker.R.string.zinc_mg, zinc),
+        Triple("copper", com.nutrition.tracker.R.string.copper_mg, copper),
+        Triple("manganese", com.nutrition.tracker.R.string.manganese_mg, manganese),
+        Triple("selenium", com.nutrition.tracker.R.string.selenium_mcg, selenium),
+        Triple("iodine", com.nutrition.tracker.R.string.iodine_mcg, iodine)
     )
 }
 

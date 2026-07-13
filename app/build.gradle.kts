@@ -43,6 +43,9 @@ android {
             "OPENROUTER_API_KEY",
             "\"${localProperties.getProperty("openrouter.api.key", "")}\""
         )
+
+        // Ship only the localizations we actually provide.
+        resourceConfigurations += listOf("ru", "uk", "en", "de", "es", "fr", "it", "pt")
     }
 
     buildTypes {
@@ -73,6 +76,7 @@ android {
 
 dependencies {
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.appcompat)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)

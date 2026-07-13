@@ -156,7 +156,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    error = "Ошибка анализа: ${e.message}"
+                    error = getApplication<Application>().getString(com.nutrition.tracker.R.string.analysis_error, e.message ?: "")
                 )
             }
         }
@@ -265,13 +265,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 } else {
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        error = "Продукт не найден по штрих-коду: $barcode"
+                        error = getApplication<Application>().getString(com.nutrition.tracker.R.string.no_food_found_for_barcode, barcode)
                     )
                 }
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    error = "Ошибка поиска: ${e.message}"
+                    error = getApplication<Application>().getString(com.nutrition.tracker.R.string.search_error, e.message ?: "")
                 )
             }
         }
@@ -342,13 +342,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 } else {
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        error = "БАД не найден по штрих-коду: $barcode"
+                        error = getApplication<Application>().getString(com.nutrition.tracker.R.string.no_supplement_found_for_barcode, barcode)
                     )
                 }
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    error = "Ошибка поиска БАД: ${e.message}"
+                    error = getApplication<Application>().getString(com.nutrition.tracker.R.string.supplement_search_error, e.message ?: "")
                 )
             }
         }
@@ -405,13 +405,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     photoNutrientsPer100g = result.nutrients
                 )
             } catch (e: Exception) {
+                val app = getApplication<Application>()
                 val userMessage = when {
                     e.message?.contains("Unable to resolve host") == true ||
                     e.message?.contains("No address associated") == true ->
-                        "Нет подключения к интернету. Проверьте сеть и попробуйте снова."
+                        app.getString(com.nutrition.tracker.R.string.no_internet_connection_check_your_networ)
                     e.message?.contains("timeout") == true ->
-                        "Превышено время ожидания. Проверьте интернет и попробуйте снова."
-                    else -> "Ошибка распознавания фото: ${e.message}"
+                        app.getString(com.nutrition.tracker.R.string.request_timed_out_check_your_internet_an)
+                    else -> app.getString(com.nutrition.tracker.R.string.photo_recognition_error, e.message ?: "")
                 }
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
@@ -493,7 +494,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    error = "Ошибка анализа: ${e.message}"
+                    error = getApplication<Application>().getString(com.nutrition.tracker.R.string.analysis_error, e.message ?: "")
                 )
             }
         }
@@ -524,23 +525,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun parseNutrients(json: String): NutrientData = repo.parseNutrients(json)
 
     private fun extractWeight(text: String): Double {
-        val regex = Regex("""(\d+)\s*(г|гр|грамм|g|ml|мл)""", RegexOption.IGNORE_CASE)
-        val match = regex.find(text)
-        return match?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0
+        return com.nutrition.tracker.util.WeightParser.parse(text).second
     }
 
     fun updateProfile(gender: String, age: Int, weight: Double, height: Double, goals: String, onComplete: () -> Unit) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             try {
+                // Only recalculate the (expensive, AI-backed) daily norms when a
+                // physiological input actually changed. Language / units are set
+                // elsewhere and never reach this method, so they can't trigger it.
+                val old = repo.getUserProfileSync()
+                val physiologyChanged = old == null ||
+                    com.nutrition.tracker.util.Gender.fromStored(gender) != com.nutrition.tracker.util.Gender.fromStored(old.gender) ||
+                    age != old.age ||
+                    weight != old.weightKg ||
+                    height != old.heightCm ||
+                    goals.trim() != old.goalsText.trim()
+
                 repo.saveUserProfile(gender, age, weight, height, goals)
-                repo.calculateAndSaveNorms(gender, age, weight, height, goals)
+                if (physiologyChanged) {
+                    repo.calculateAndSaveNorms(gender, age, weight, height, goals)
+                }
                 _uiState.value = _uiState.value.copy(isLoading = false)
                 onComplete()
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    error = "Ошибка обновления профиля: ${e.message}"
+                    error = getApplication<Application>().getString(com.nutrition.tracker.R.string.profile_update_error, e.message ?: "")
                 )
             }
         }
@@ -571,7 +583,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 repo.addManualCachedFood(keyOriginal, keyEn, nutrients)
             } catch (e: Exception) {
-                onError(e.message ?: "Ошибка")
+                onError(e.message ?: getApplication<Application>().getString(com.nutrition.tracker.R.string.error_short))
             }
         }
     }
@@ -598,11 +610,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         val results = try {
                             repo.analyzeFoodText(query)
                         } catch (e: Exception) {
-                            onError("Не удалось распознать «$trimmed»: ${e.message ?: ""}")
+                            onError(getApplication<Application>().getString(com.nutrition.tracker.R.string.couldn_t_recognize_1_2, trimmed, e.message ?: ""))
                             return@launch
                         }
                         if (results.isEmpty()) {
-                            onError("Не удалось распознать «$trimmed»")
+                            onError(getApplication<Application>().getString(com.nutrition.tracker.R.string.couldn_t_recognize, trimmed))
                             return@launch
                         }
                         for (r in results) total = total + r.nutrients
@@ -610,7 +622,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     totalWeight += ingWeight
                 }
                 if (totalWeight <= 0) {
-                    onError("Сумма весов ингредиентов должна быть больше 0")
+                    onError(getApplication<Application>().getString(com.nutrition.tracker.R.string.total_ingredient_weight_must_be_greater_))
                     return@launch
                 }
                 val per100g = total * (100.0 / totalWeight)
@@ -618,7 +630,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 repo.addManualCachedFood(trimmedName, trimmedName, per100g)
                 onSuccess()
             } catch (e: Exception) {
-                onError(e.message ?: "Ошибка создания блюда")
+                onError(e.message ?: getApplication<Application>().getString(com.nutrition.tracker.R.string.error_creating_dish))
             }
         }
     }

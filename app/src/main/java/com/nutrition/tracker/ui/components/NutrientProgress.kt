@@ -14,8 +14,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.nutrition.tracker.R
 import com.nutrition.tracker.data.NutrientTopFoods
 import com.nutrition.tracker.data.db.FoodEntryEntity
 import com.nutrition.tracker.data.model.NutrientData
@@ -71,7 +73,7 @@ fun NutrientProgressBar(
                 if (nutrientKey != null && NutrientTopFoods.data.containsKey(nutrientKey)) {
                     Icon(
                         Icons.Outlined.Info,
-                        contentDescription = "Топ продуктов",
+                        contentDescription = stringResource(R.string.top_foods),
                         modifier = Modifier.size(14.dp).clickable { showTopFoods = true },
                         tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
                     )
@@ -103,14 +105,17 @@ fun NutrientTopFoodsDialog(
 ) {
     val info = NutrientTopFoods.data[nutrientKey] ?: return onDismiss()
     val sortedFoods = remember(info) { info.foods.sortedByDescending { it.per100g } }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val langCode = com.nutrition.tracker.util.AppLocale.languageCode
+    val unitLabel = NutrientTopFoods.localizedUnit(context, info.unit)
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Топ-15: $nutrientName") },
+        title = { Text(stringResource(R.string.top_15, nutrientName)) },
         text = {
             Column {
                 Text(
-                    "Содержание на 100 г продукта (% от дневной нормы)",
+                    stringResource(R.string.content_per_100_g_of_daily_value),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 8.dp)
@@ -123,12 +128,12 @@ fun NutrientTopFoodsDialog(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text(
-                                "${index + 1}. ${food.name}",
+                                "${index + 1}. ${NutrientTopFoods.localizedName(food.name, langCode)}",
                                 style = MaterialTheme.typography.bodySmall,
                                 modifier = Modifier.weight(1f)
                             )
                             Text(
-                                "${"%.1f".format(food.per100g)} ${info.unit} ($pct% дн.)",
+                                "${"%.1f".format(food.per100g)} $unitLabel ($pct% ${stringResource(R.string.days_short)})",
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.Medium
                             )
@@ -138,7 +143,7 @@ fun NutrientTopFoodsDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Закрыть") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) }
         }
     )
 }
@@ -153,11 +158,11 @@ fun MacrosProgressSection(
     var breakdownKey by remember { mutableStateOf<Pair<String, String>?>(null) }
 
     val macroKeys = listOf(
-        Triple("Калории", "calories", "ккал"),
-        Triple("Белки", "protein", "г"),
-        Triple("Жиры", "fat", "г"),
-        Triple("Углеводы", "carbs", "г"),
-        Triple("Клетчатка", "fiber", "г")
+        Triple(stringResource(R.string.calories), "calories", stringResource(R.string.kcal_short)),
+        Triple(stringResource(R.string.protein), "protein", stringResource(R.string.gram_short)),
+        Triple(stringResource(R.string.fat), "fat", stringResource(R.string.gram_short)),
+        Triple(stringResource(R.string.carbs), "carbs", stringResource(R.string.gram_short)),
+        Triple(stringResource(R.string.fiber), "fiber", stringResource(R.string.gram_short))
     )
     // Upper limits as ratio of target: strict for cal/fat/carbs, lenient for protein/fiber
     val macroUpperRatios = listOf(1.15, 1.8, 1.3, 1.3, 3.0)
@@ -232,10 +237,11 @@ fun VitaminsProgressSection(
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            totalsList.forEachIndexed { index, (name, value) ->
+            totalsList.forEachIndexed { index, (nameRes, value) ->
                 val normValue = normsList.getOrNull(index)?.second ?: 0.0
                 val key = vitaminKeys.getOrNull(index) ?: ""
                 val upperRatio = vitaminUpperRatios.getOrNull(index) ?: 1.5
+                val name = stringResource(nameRes)
                 NutrientProgressBar(
                     name, value, normValue, "",
                     upperRatio = upperRatio,
@@ -294,10 +300,11 @@ fun MineralsProgressSection(
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            totalsList.forEachIndexed { index, (name, value) ->
+            totalsList.forEachIndexed { index, (nameRes, value) ->
                 val normValue = normsList.getOrNull(index)?.second ?: 0.0
                 val key = mineralKeys.getOrNull(index) ?: ""
                 val upperRatio = mineralUpperRatios.getOrNull(index) ?: 1.5
+                val name = stringResource(nameRes)
                 NutrientProgressBar(
                     name, value, normValue, "",
                     upperRatio = upperRatio,
@@ -341,10 +348,11 @@ fun FatDetailsProgressSection(
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            totalsList.forEachIndexed { index, (name, value) ->
+            totalsList.forEachIndexed { index, (nameRes, value) ->
                 val normValue = normsList.getOrNull(index)?.second ?: 0.0
                 val key = fatKeys.getOrNull(index) ?: ""
                 val upperRatio = fatUpperRatios.getOrNull(index) ?: 1.5
+                val name = stringResource(nameRes)
                 NutrientProgressBar(
                     name, value, normValue, "",
                     upperRatio = upperRatio,
@@ -395,7 +403,7 @@ fun SectionHeader(
             )
             Icon(
                 if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                contentDescription = if (expanded) "Свернуть" else "Развернуть"
+                contentDescription = if (expanded) stringResource(R.string.collapse) else stringResource(R.string.expand)
             )
         }
     }

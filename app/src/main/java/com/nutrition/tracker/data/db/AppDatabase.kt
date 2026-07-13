@@ -10,7 +10,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [UserProfileEntity::class, DailyNormsEntity::class, FoodEntryEntity::class, FoodCacheEntity::class],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -47,6 +47,31 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Language-neutral canonical cache key + English name on entries (i18n).
+                db.execSQL("ALTER TABLE food_entries ADD COLUMN foodNameEn TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE food_cache ADD COLUMN keyEnNormalized TEXT NOT NULL DEFAULT ''")
+                // Backfill keyEnNormalized: lowercase, collapse spaces, sort words (matches normalizeKey).
+                val cursor = db.query("SELECT id, keyEn FROM food_cache")
+                val idIdx = cursor.getColumnIndexOrThrow("id")
+                val enIdx = cursor.getColumnIndexOrThrow("keyEn")
+                val updates = ArrayList<Pair<Long, String>>()
+                while (cursor.moveToNext()) {
+                    val id = cursor.getLong(idIdx)
+                    val keyEn = cursor.getString(enIdx) ?: ""
+                    val norm = keyEn.lowercase().trim().replace(Regex("\\s+"), " ")
+                        .split(" ").filter { it.isNotEmpty() }.sorted().joinToString(" ")
+                    updates.add(id to norm)
+                }
+                cursor.close()
+                for ((id, norm) in updates) {
+                    db.execSQL("UPDATE food_cache SET keyEnNormalized = ? WHERE id = ?", arrayOf<Any>(norm, id))
+                }
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_food_cache_keyEnNormalized ON food_cache (keyEnNormalized)")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -54,7 +79,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "nutrition_tracker_db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .build().also { INSTANCE = it }
             }
         }

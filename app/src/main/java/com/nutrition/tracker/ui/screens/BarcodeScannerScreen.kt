@@ -19,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
@@ -26,6 +27,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
+import com.nutrition.tracker.R
 
 @kotlin.OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -56,10 +58,10 @@ fun BarcodeScannerScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Сканер штрих-кода") },
+                title = { Text(stringResource(R.string.barcode_scanner)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Назад")
+                        Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.back))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -137,7 +139,7 @@ fun BarcodeScannerScreen(
                     )
                 ) {
                     Text(
-                        text = if (readyToScan) "Наведите на штрих-код…" else "Сканировать",
+                        text = if (readyToScan) stringResource(R.string.point_at_the_barcode) else stringResource(R.string.scan),
                         style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.padding(vertical = 4.dp)
                     )
@@ -149,10 +151,10 @@ fun BarcodeScannerScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
-                    Text("Для сканирования нужен доступ к камере")
+                    Text(stringResource(R.string.camera_needed_for_scan))
                     Spacer(Modifier.height(16.dp))
                     Button(onClick = { launcher.launch(Manifest.permission.CAMERA) }) {
-                        Text("Разрешить камеру")
+                        Text(stringResource(R.string.allow_camera))
                     }
                 }
             }

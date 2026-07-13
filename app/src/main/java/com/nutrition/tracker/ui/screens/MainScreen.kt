@@ -8,8 +8,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nutrition.tracker.R
 import com.nutrition.tracker.data.db.FoodCacheEntity
 import com.nutrition.tracker.data.db.FoodEntryEntity
 import com.nutrition.tracker.data.model.NutrientData
@@ -70,7 +72,7 @@ fun MainScreen(
             onWeightChange = { viewModel.updateBarcodeWeight(it) },
             onConfirm = { viewModel.confirmBarcodeAdd() },
             onDismiss = { viewModel.dismissBarcodeDialog() },
-            title = "Найден продукт"
+            title = stringResource(R.string.food_found)
         )
     }
 
@@ -78,7 +80,7 @@ fun MainScreen(
     uiState.importedSharedFood?.let { food ->
         AlertDialog(
             onDismissRequest = { viewModel.dismissImportedSharedFood() },
-            title = { Text("Добавить продукт?") },
+            title = { Text(stringResource(R.string.add_food)) },
             text = {
                 Column {
                     Text(food.nameRu, style = MaterialTheme.typography.titleMedium)
@@ -89,7 +91,8 @@ fun MainScreen(
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "%.0f ккал • Б %.1f г • Ж %.1f г • У %.1f г".format(
+                        stringResource(
+                            R.string.macro_summary,
                             food.nutrients.calories, food.nutrients.protein,
                             food.nutrients.fat, food.nutrients.carbs
                         ),
@@ -99,12 +102,12 @@ fun MainScreen(
             },
             confirmButton = {
                 TextButton(onClick = { viewModel.importSharedFood() }) {
-                    Text("Добавить в сохранённые")
+                    Text(stringResource(R.string.add_to_saved))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { viewModel.dismissImportedSharedFood() }) {
-                    Text("Отмена")
+                    Text(stringResource(R.string.cancel))
                 }
             }
         )
@@ -158,14 +161,14 @@ fun MainScreen(
                 HorizontalDivider()
                 NavigationDrawerItem(
                     icon = { Icon(Icons.Default.Home, contentDescription = null) },
-                    label = { Text("Главная") },
+                    label = { Text(stringResource(R.string.home)) },
                     selected = true,
                     onClick = { scope.launch { drawerState.close() } },
                     modifier = Modifier.padding(horizontal = 12.dp)
                 )
                 NavigationDrawerItem(
                     icon = { Icon(Icons.Default.Person, contentDescription = null) },
-                    label = { Text("Профиль") },
+                    label = { Text(stringResource(R.string.profile)) },
                     selected = false,
                     onClick = {
                         scope.launch { drawerState.close() }
@@ -175,7 +178,7 @@ fun MainScreen(
                 )
                 NavigationDrawerItem(
                     icon = { Icon(Icons.Default.Storage, contentDescription = null) },
-                    label = { Text("Сохранённые продукты") },
+                    label = { Text(stringResource(R.string.saved_foods)) },
                     selected = false,
                     onClick = {
                         scope.launch { drawerState.close() }
@@ -185,7 +188,7 @@ fun MainScreen(
                 )
                 NavigationDrawerItem(
                     icon = { Icon(Icons.Default.History, contentDescription = null) },
-                    label = { Text("История") },
+                    label = { Text(stringResource(R.string.history)) },
                     selected = false,
                     onClick = {
                         scope.launch { drawerState.close() }
@@ -195,7 +198,7 @@ fun MainScreen(
                 )
                 NavigationDrawerItem(
                     icon = { Icon(Icons.Default.BarChart, contentDescription = null) },
-                    label = { Text("Статистика") },
+                    label = { Text(stringResource(R.string.statistics)) },
                     selected = false,
                     onClick = {
                         scope.launch { drawerState.close() }
@@ -218,7 +221,7 @@ fun MainScreen(
                     IconButton(onClick = { scope.launch { drawerState.open() } }) {
                         Icon(
                             Icons.Default.Menu,
-                            contentDescription = "Меню",
+                            contentDescription = stringResource(R.string.menu),
                             tint = MaterialTheme.colorScheme.onPrimary
                         )
                     }
@@ -227,7 +230,7 @@ fun MainScreen(
                     IconButton(onClick = onNavigateToHistory) {
                         Icon(
                             Icons.Default.History,
-                            contentDescription = "История",
+                            contentDescription = stringResource(R.string.history),
                             tint = MaterialTheme.colorScheme.onPrimary
                         )
                     }
@@ -264,7 +267,7 @@ fun MainScreen(
                 if (entries.isNotEmpty()) {
                     item {
                         Text(
-                            "Сегодня",
+                            stringResource(R.string.today),
                             style = MaterialTheme.typography.headlineMedium,
                             modifier = Modifier.padding(top = 8.dp)
                         )
@@ -286,7 +289,7 @@ fun MainScreen(
                     item {
                         Spacer(Modifier.height(8.dp))
                         Text(
-                            "БЖУ и Калории",
+                            stringResource(R.string.macros_and_calories),
                             style = MaterialTheme.typography.headlineMedium
                         )
                     }
@@ -302,7 +305,7 @@ fun MainScreen(
                     // Vitamins
                     item {
                         SectionHeader(
-                            title = "Витамины",
+                            title = stringResource(R.string.vitamins),
                             expanded = vitaminsExpanded,
                             onToggle = { vitaminsExpanded = !vitaminsExpanded }
                         )
@@ -321,7 +324,7 @@ fun MainScreen(
                     // Minerals
                     item {
                         SectionHeader(
-                            title = "Минералы и микроэлементы",
+                            title = stringResource(R.string.minerals_and_trace_elements),
                             expanded = mineralsExpanded,
                             onToggle = { mineralsExpanded = !mineralsExpanded }
                         )
@@ -340,7 +343,7 @@ fun MainScreen(
                     // Fat details
                     item {
                         SectionHeader(
-                            title = "Жиры (детально)",
+                            title = stringResource(R.string.fats_details_3),
                             expanded = fatDetailsExpanded,
                             onToggle = { fatDetailsExpanded = !fatDetailsExpanded }
                         )
@@ -370,7 +373,7 @@ fun MainScreen(
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             CircularProgressIndicator()
                             Spacer(Modifier.height(8.dp))
-                            Text("Анализируем...", style = MaterialTheme.typography.bodyLarge)
+                            Text(stringResource(R.string.analyzing), style = MaterialTheme.typography.bodyLarge)
                         }
                     }
                 }
@@ -404,7 +407,7 @@ private fun FoodInputSection(
 
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { quickAddEntry = null },
-            title = { Text("Добавить в приём пищи") },
+            title = { Text(stringResource(R.string.add_to_meal)) },
             text = {
                 Column {
                     Text(entry.keyOriginal, style = MaterialTheme.typography.bodyMedium,
@@ -413,7 +416,7 @@ private fun FoodInputSection(
                     OutlinedTextField(
                         value = quickAddWeight,
                         onValueChange = { quickAddWeight = it },
-                        label = { Text("Вес (г)") },
+                        label = { Text(stringResource(R.string.weight_g)) },
                         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
                             keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
                         ),
@@ -424,7 +427,8 @@ private fun FoodInputSection(
                     if (w > 0) {
                         val factor = w / 100.0
                         Text(
-                            "%.0f ккал • Б %.1f • Ж %.1f • У %.1f".format(
+                            stringResource(
+                                R.string.macro_summary,
                                 nutrients.calories * factor, nutrients.protein * factor,
                                 nutrients.fat * factor, nutrients.carbs * factor
                             ),
@@ -443,10 +447,10 @@ private fun FoodInputSection(
                         quickAddEntry = null
                         quickAddWeight = "100"
                     }
-                }) { Text("Добавить") }
+                }) { Text(stringResource(R.string.add)) }
             },
             dismissButton = {
-                TextButton(onClick = { quickAddEntry = null }) { Text("Отмена") }
+                TextButton(onClick = { quickAddEntry = null }) { Text(stringResource(R.string.cancel)) }
             }
         )
     }
@@ -473,8 +477,8 @@ private fun FoodInputSection(
             OutlinedTextField(
                 value = foodInput,
                 onValueChange = onFoodInputChange,
-                label = { Text("Что вы съели?") },
-                placeholder = { Text("Например: борщ 300г, хлеб 50г") },
+                label = { Text(stringResource(R.string.what_did_you_eat)) },
+                placeholder = { Text(stringResource(R.string.hint_food_example)) },
                 modifier = Modifier.fillMaxWidth(),
                 maxLines = 3,
                 minLines = 2
@@ -514,7 +518,8 @@ private fun FoodInputSection(
                                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                                         )
                                         Text(
-                                            "%.0f ккал • Б%.1f Ж%.1f У%.1f /100г".format(
+                                            stringResource(
+                                                R.string.macro_summary_100g,
                                                 nutrients.calories, nutrients.protein, nutrients.fat, nutrients.carbs
                                             ),
                                             style = MaterialTheme.typography.labelSmall,
@@ -523,7 +528,7 @@ private fun FoodInputSection(
                                     }
                                     Icon(
                                         Icons.Default.Add,
-                                        contentDescription = "Добавить",
+                                        contentDescription = stringResource(R.string.add),
                                         tint = MaterialTheme.colorScheme.primary,
                                         modifier = Modifier.size(20.dp)
                                     )
@@ -546,7 +551,7 @@ private fun FoodInputSection(
             ) {
                 Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("Добавить")
+                Text(stringResource(R.string.add))
             }
 
             Spacer(Modifier.height(8.dp))
@@ -560,7 +565,7 @@ private fun FoodInputSection(
                     enabled = !isLoading,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Icon(Icons.Default.QrCodeScanner, contentDescription = "Штрих-код")
+                    Icon(Icons.Default.QrCodeScanner, contentDescription = stringResource(R.string.barcode))
                 }
 
                 OutlinedButton(
@@ -576,7 +581,7 @@ private fun FoodInputSection(
                     enabled = !isLoading,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Icon(Icons.Default.CameraAlt, contentDescription = "Фото")
+                    Icon(Icons.Default.CameraAlt, contentDescription = stringResource(R.string.photo))
                 }
             }
         }

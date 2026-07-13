@@ -27,6 +27,7 @@ data class FoodEntryEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val date: String,
     val foodName: String,
+    val foodNameEn: String = "",
     val weightGrams: Double,
     val nutrientsJson: String,
     val source: String = "manual",
@@ -36,13 +37,15 @@ data class FoodEntryEntity(
 
 @Entity(
     tableName = "food_cache",
-    indices = [Index(value = ["keyNormalized"], unique = true)]
+    indices = [Index(value = ["keyNormalized"], unique = true), Index(value = ["keyEnNormalized"])]
 )
 data class FoodCacheEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val keyOriginal: String,
     val keyNormalized: String,
     val keyEn: String,
+    /** Normalized English name — language-neutral canonical key for cross-language matching. */
+    val keyEnNormalized: String = "",
     val nutrientsPer100gJson: String,
     val createdAt: Long = System.currentTimeMillis()
 )

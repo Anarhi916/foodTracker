@@ -7,12 +7,16 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.nutrition.tracker.R
 import com.nutrition.tracker.data.db.FoodEntryEntity
 import com.nutrition.tracker.data.model.NutrientData
+import com.nutrition.tracker.util.WeightFormat
 
 @Composable
 fun FoodConfirmationDialog(
@@ -24,7 +28,7 @@ fun FoodConfirmationDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text("Подтвердить добавление", fontWeight = FontWeight.Bold)
+            Text(stringResource(R.string.confirm_add), fontWeight = FontWeight.Bold)
         },
         text = {
             Column(
@@ -37,42 +41,42 @@ fun FoodConfirmationDialog(
                     fontWeight = FontWeight.SemiBold
                 )
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                NutrientRow("Калории", "%.0f ккал".format(nutrients.calories))
-                NutrientRow("Белки", "%.1f г".format(nutrients.protein))
-                NutrientRow("Жиры", "%.1f г".format(nutrients.fat))
-                NutrientRow("Углеводы", "%.1f г".format(nutrients.carbs))
-                NutrientRow("Клетчатка", "%.1f г".format(nutrients.fiber))
+                NutrientRow(stringResource(R.string.calories), "%.0f %s".format(nutrients.calories, stringResource(R.string.kcal_short)))
+                NutrientRow(stringResource(R.string.protein), "%.1f %s".format(nutrients.protein, stringResource(R.string.gram_short)))
+                NutrientRow(stringResource(R.string.fat), "%.1f %s".format(nutrients.fat, stringResource(R.string.gram_short)))
+                NutrientRow(stringResource(R.string.carbs), "%.1f %s".format(nutrients.carbs, stringResource(R.string.gram_short)))
+                NutrientRow(stringResource(R.string.fiber), "%.1f %s".format(nutrients.fiber, stringResource(R.string.gram_short)))
 
                 if (nutrients.fatDetailsList().any { it.second > 0 }) {
                     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                    Text("Жиры (детально):", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                    nutrients.fatDetailsList().filter { it.second > 0 }.forEach { (name, value) ->
-                        NutrientRow(name, "%.2f".format(value))
+                    Text(stringResource(R.string.fats_details_2), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    nutrients.fatDetailsList().filter { it.second > 0 }.forEach { (nameRes, value) ->
+                        NutrientRow(stringResource(nameRes), "%.2f".format(value))
                     }
                 }
 
                 if (nutrients.vitaminsList().any { it.second > 0 }) {
                     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                    Text("Витамины:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                    nutrients.vitaminsList().filter { it.second > 0 }.forEach { (name, value) ->
-                        NutrientRow(name, "%.2f".format(value))
+                    Text(stringResource(R.string.vitamins_2), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    nutrients.vitaminsList().filter { it.second > 0 }.forEach { (nameRes, value) ->
+                        NutrientRow(stringResource(nameRes), "%.2f".format(value))
                     }
                 }
 
                 if (nutrients.mineralsList().any { it.second > 0 }) {
                     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                    Text("Минералы:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                    nutrients.mineralsList().filter { it.second > 0 }.forEach { (name, value) ->
-                        NutrientRow(name, "%.2f".format(value))
+                    Text(stringResource(R.string.minerals_2), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    nutrients.mineralsList().filter { it.second > 0 }.forEach { (nameRes, value) ->
+                        NutrientRow(stringResource(nameRes), "%.2f".format(value))
                     }
                 }
             }
         },
         confirmButton = {
-            Button(onClick = onConfirm) { Text("Добавить") }
+            Button(onClick = onConfirm) { Text(stringResource(R.string.add)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Отмена") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         }
     )
 }
@@ -86,22 +90,22 @@ fun EditWeightDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Изменить вес") },
+        title = { Text(stringResource(R.string.edit_weight)) },
         text = {
             OutlinedTextField(
                 value = currentWeight,
                 onValueChange = onWeightChange,
-                label = { Text("Вес (г)") },
+                label = { Text(stringResource(R.string.weight_g)) },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
         },
         confirmButton = {
-            Button(onClick = onConfirm) { Text("Сохранить") }
+            Button(onClick = onConfirm) { Text(stringResource(R.string.save)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Отмена") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         }
     )
 }
@@ -113,11 +117,11 @@ fun BarcodeWeightDialog(
     onWeightChange: (String) -> Unit,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
-    title: String = "Найден продукт"
+    title: String? = null
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(title) },
+        title = { Text(title ?: stringResource(R.string.food_found)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
@@ -128,7 +132,7 @@ fun BarcodeWeightDialog(
                 OutlinedTextField(
                     value = weight,
                     onValueChange = onWeightChange,
-                    label = { Text("Вес употреблённого (г)") },
+                    label = { Text(stringResource(R.string.amount_eaten_g)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
@@ -136,10 +140,10 @@ fun BarcodeWeightDialog(
             }
         },
         confirmButton = {
-            Button(onClick = onConfirm) { Text("Добавить") }
+            Button(onClick = onConfirm) { Text(stringResource(R.string.add)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Отмена") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         }
     )
 }
@@ -155,18 +159,18 @@ fun PhotoEditDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Распознано по фото") },
+        title = { Text(stringResource(R.string.recognized_from_photo)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    "Проверьте и при необходимости отредактируйте:",
+                    stringResource(R.string.review_and_edit_if_needed),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 OutlinedTextField(
                     value = foodName,
                     onValueChange = onFoodNameChange,
-                    label = { Text("Блюдо / продукты") },
+                    label = { Text(stringResource(R.string.dish_or_products)) },
                     modifier = Modifier.fillMaxWidth(),
                     minLines = 2,
                     maxLines = 4
@@ -174,7 +178,7 @@ fun PhotoEditDialog(
                 OutlinedTextField(
                     value = weight,
                     onValueChange = onWeightChange,
-                    label = { Text("Вес порции (г)") },
+                    label = { Text(stringResource(R.string.portion_weight_g)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
@@ -182,10 +186,10 @@ fun PhotoEditDialog(
             }
         },
         confirmButton = {
-            Button(onClick = onConfirm) { Text("Анализировать") }
+            Button(onClick = onConfirm) { Text(stringResource(R.string.analyze)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Отмена") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         }
     )
 }
@@ -209,6 +213,7 @@ fun NutrientBreakdownDialog(
     parseNutrients: (String) -> NutrientData,
     onDismiss: () -> Unit
 ) {
+    val context = LocalContext.current
     val items = entries.map { entry ->
         val nutrients = parseNutrients(entry.nutrientsJson)
         Triple(entry.foodName, entry.weightGrams, nutrients.getByKey(nutrientKey))
@@ -227,18 +232,18 @@ fun NutrientBreakdownDialog(
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 if (items.isEmpty()) {
-                    Text("Нет данных", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.no_data), style = MaterialTheme.typography.bodyMedium)
                 } else {
                     // Header
                     Row(modifier = Modifier.fillMaxWidth()) {
                         Text(
-                            "Продукт",
+                            stringResource(R.string.food),
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.weight(1f)
                         )
                         Text(
-                            "Кол-во",
+                            stringResource(R.string.qty),
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.width(60.dp)
@@ -258,7 +263,7 @@ fun NutrientBreakdownDialog(
                             modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
                         ) {
                             Text(
-                                "$name (${weight.toInt()}г)",
+                                "$name (${WeightFormat.short(context, weight)})",
                                 style = MaterialTheme.typography.bodySmall,
                                 modifier = Modifier.weight(1f),
                                 maxLines = 2,
@@ -282,7 +287,7 @@ fun NutrientBreakdownDialog(
                     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
                     Row(modifier = Modifier.fillMaxWidth()) {
                         Text(
-                            "Итого",
+                            stringResource(R.string.total),
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.weight(1f)
@@ -304,7 +309,7 @@ fun NutrientBreakdownDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Закрыть") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) }
         }
     )
 }
@@ -320,7 +325,7 @@ fun SupplementServingsDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("💊 Найден БАД") },
+        title = { Text(stringResource(R.string.supplement_found)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
@@ -329,14 +334,14 @@ fun SupplementServingsDialog(
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    text = "Размер порции: $servingSize",
+                    text = stringResource(R.string.serving_size, servingSize),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 OutlinedTextField(
                     value = servings,
                     onValueChange = onServingsChange,
-                    label = { Text("Количество порций") },
+                    label = { Text(stringResource(R.string.number_of_servings)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
@@ -344,10 +349,10 @@ fun SupplementServingsDialog(
             }
         },
         confirmButton = {
-            Button(onClick = onConfirm) { Text("Добавить") }
+            Button(onClick = onConfirm) { Text(stringResource(R.string.add)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Отмена") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         }
     )
 }

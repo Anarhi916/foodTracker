@@ -585,4 +585,24 @@ object NutrientTopFoods {
             FoodSource("Кукуруза", 5.0),
         )),
     )
+
+    /** Localized display name for a food source. Data stores Russian names as
+     *  canonical keys; resolves to [langCode] via [foodNameTranslations].
+     *  Falls back to the Russian name. */
+    fun localizedName(russianName: String, langCode: String): String {
+        if (langCode == "ru") return russianName
+        return foodNameTranslations[russianName]?.get(langCode) ?: russianName
+    }
+
+    /** Localized short unit label for the given Russian unit, via string resources. */
+    fun localizedUnit(context: android.content.Context, russianUnit: String): String {
+        val res = when (russianUnit) {
+            "ккал" -> com.nutrition.tracker.R.string.kcal_short
+            "г" -> com.nutrition.tracker.R.string.gram_short
+            "мг" -> com.nutrition.tracker.R.string.mg_short
+            "мкг" -> com.nutrition.tracker.R.string.mcg_short
+            else -> return russianUnit
+        }
+        return context.getString(res)
+    }
 }

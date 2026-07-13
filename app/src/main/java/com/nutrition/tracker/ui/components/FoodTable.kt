@@ -16,15 +16,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.nutrition.tracker.R
 import com.nutrition.tracker.data.db.FoodEntryEntity
 import com.nutrition.tracker.data.model.NutrientData
 import com.nutrition.tracker.ui.theme.ProgressOrange
+import com.nutrition.tracker.util.WeightFormat
 
 @Composable
 fun FoodEntriesTable(
@@ -34,6 +38,7 @@ fun FoodEntriesTable(
     onSaveWeights: (Map<Long, Double>) -> Unit,
     onDelete: (FoodEntryEntity) -> Unit
 ) {
+    val context = LocalContext.current
     var editMode by remember { mutableStateOf(false) }
     var editedWeights by remember { mutableStateOf<Map<Long, String>>(emptyMap()) }
     var showDeleteConfirm by remember { mutableStateOf<FoodEntryEntity?>(null) }
@@ -41,16 +46,16 @@ fun FoodEntriesTable(
     showDeleteConfirm?.let { entry ->
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = null },
-            title = { Text("Удалить?") },
-            text = { Text("Удалить ${entry.foodName} из дневника?") },
+            title = { Text(stringResource(R.string.delete_2)) },
+            text = { Text(stringResource(R.string.delete_from_the_diary, entry.foodName)) },
             confirmButton = {
                 TextButton(onClick = {
                     onDelete(entry)
                     showDeleteConfirm = null
-                }) { Text("Удалить") }
+                }) { Text(stringResource(R.string.delete)) }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = null }) { Text("Отмена") }
+                TextButton(onClick = { showDeleteConfirm = null }) { Text(stringResource(R.string.cancel)) }
             }
         )
     }
@@ -75,7 +80,7 @@ fun FoodEntriesTable(
                     },
                     modifier = Modifier.weight(1f),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-                ) { Text("Сохранить") }
+                ) { Text(stringResource(R.string.save)) }
                 OutlinedButton(
                     onClick = {
                         editMode = false
@@ -83,7 +88,7 @@ fun FoodEntriesTable(
                     },
                     modifier = Modifier.weight(1f),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-                ) { Text("Отмена") }
+                ) { Text(stringResource(R.string.cancel)) }
             }
             Spacer(Modifier.height(4.dp))
         } else {
@@ -99,7 +104,7 @@ fun FoodEntriesTable(
                 ) {
                     Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("Редактировать")
+                    Text(stringResource(R.string.edit))
                 }
             }
         }
@@ -117,12 +122,12 @@ fun FoodEntriesTable(
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Продукт", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(2.5f))
-                Text("Вес", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                Text("Ккал", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                Text("Б", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.7f))
-                Text("Ж", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.7f))
-                Text("У", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.7f))
+                Text(stringResource(R.string.food), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(2.5f))
+                Text(stringResource(R.string.weight), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Text(stringResource(R.string.kcal), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Text(stringResource(R.string.p), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.7f))
+                Text(stringResource(R.string.f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.7f))
+                Text(stringResource(R.string.c), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.7f))
                 if (editMode) {
                     Spacer(Modifier.width(36.dp))
                 }
@@ -196,7 +201,7 @@ fun FoodEntriesTable(
                         )
                     } else {
                         Text(
-                            "${entry.weightGrams.toInt()}г",
+                            WeightFormat.short(context, entry.weightGrams),
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.weight(1f)
                         )
@@ -212,7 +217,7 @@ fun FoodEntriesTable(
                         ) {
                             Icon(
                                 Icons.Default.Close,
-                                contentDescription = "Удалить",
+                                contentDescription = stringResource(R.string.delete),
                                 modifier = Modifier.size(16.dp),
                                 tint = MaterialTheme.colorScheme.error
                             )
@@ -235,8 +240,8 @@ fun FoodEntriesTable(
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Итого", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(2.5f))
-                Text("${entries.sumOf { it.weightGrams }.toInt()}г", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Text(stringResource(R.string.total), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(2.5f))
+                Text(WeightFormat.short(context, entries.sumOf { it.weightGrams }), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 Text("%.0f".format(totals.calories), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 Text("%.1f".format(totals.protein), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.7f))
                 Text("%.1f".format(totals.fat), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.7f))

@@ -13,18 +13,20 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.nutrition.tracker.R
 import com.nutrition.tracker.data.model.NutrientData
 import com.nutrition.tracker.viewmodel.MainViewModel
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
-enum class StatPeriod(val label: String) {
-    WEEK("Неделя"),
-    MONTH("Месяц"),
-    CUSTOM("Свой период")
+enum class StatPeriod {
+    WEEK,
+    MONTH,
+    CUSTOM
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -34,6 +36,7 @@ fun StatisticsScreen(
     onBack: () -> Unit
 ) {
     val formatter = DateTimeFormatter.ISO_LOCAL_DATE
+    val displayFormatter = DateTimeFormatter.ofLocalizedDate(java.time.format.FormatStyle.MEDIUM).withLocale(java.util.Locale.getDefault())
     val today = LocalDate.now()
 
     var selectedPeriod by remember { mutableStateOf(StatPeriod.WEEK) }
@@ -111,7 +114,7 @@ fun StatisticsScreen(
                 }) { Text("OK") }
             },
             dismissButton = {
-                TextButton(onClick = { showStartPicker = false }) { Text("Отмена") }
+                TextButton(onClick = { showStartPicker = false }) { Text(stringResource(R.string.cancel)) }
             }
         ) {
             DatePicker(state = pickerState)
@@ -134,7 +137,7 @@ fun StatisticsScreen(
                 }) { Text("OK") }
             },
             dismissButton = {
-                TextButton(onClick = { showEndPicker = false }) { Text("Отмена") }
+                TextButton(onClick = { showEndPicker = false }) { Text(stringResource(R.string.cancel)) }
             }
         ) {
             DatePicker(state = pickerState)
@@ -144,10 +147,10 @@ fun StatisticsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Статистика") },
+                title = { Text(stringResource(R.string.statistics)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Назад")
+                        Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.back))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -173,7 +176,7 @@ fun StatisticsScreen(
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Text(
-                            "Период",
+                            stringResource(R.string.period),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
@@ -188,7 +191,13 @@ fun StatisticsScreen(
                                     onClick = { selectedPeriod = period },
                                     selected = selectedPeriod == period
                                 ) {
-                                    Text(period.label)
+                                    Text(
+                                        when (period) {
+                                            StatPeriod.WEEK -> stringResource(R.string.week)
+                                            StatPeriod.MONTH -> stringResource(R.string.month)
+                                            StatPeriod.CUSTOM -> stringResource(R.string.custom_range)
+                                        }
+                                    )
                                 }
                             }
                         }
@@ -220,7 +229,7 @@ fun StatisticsScreen(
 
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            "${effectiveStart.format(DateTimeFormatter.ofPattern("dd.MM.yyyy"))} — ${effectiveEnd.format(DateTimeFormatter.ofPattern("dd.MM.yyyy"))} ($numDays дн.)",
+                            "${effectiveStart.format(displayFormatter)} — ${effectiveEnd.format(displayFormatter)} ($numDays ${stringResource(R.string.days_short)})",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -254,7 +263,7 @@ fun StatisticsScreen(
                         ) {
                             Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("Экспорт в Excel")
+                            Text(stringResource(R.string.export_to_excel))
                         }
                     }
                 }
@@ -273,7 +282,7 @@ fun StatisticsScreen(
                 // Macros
                 item {
                     NutrientStatCard(
-                        title = "БЖУ и Калории",
+                        title = stringResource(R.string.macros_and_calories),
                         items = t.macrosList(),
                         normItems = normForPeriod?.macrosList()
                     )
@@ -282,7 +291,7 @@ fun StatisticsScreen(
                 // Vitamins
                 item {
                     NutrientStatCard(
-                        title = "Витамины",
+                        title = stringResource(R.string.vitamins),
                         items = t.vitaminsList(),
                         normItems = normForPeriod?.vitaminsList()
                     )
@@ -291,7 +300,7 @@ fun StatisticsScreen(
                 // Minerals
                 item {
                     NutrientStatCard(
-                        title = "Минералы и микроэлементы",
+                        title = stringResource(R.string.minerals_and_trace_elements),
                         items = t.mineralsList(),
                         normItems = normForPeriod?.mineralsList()
                     )
@@ -300,7 +309,7 @@ fun StatisticsScreen(
                 // Fat details
                 item {
                     NutrientStatCard(
-                        title = "Жиры (детально)",
+                        title = stringResource(R.string.fats_details_3),
                         items = t.fatDetailsList(),
                         normItems = normForPeriod?.fatDetailsList()
                     )
@@ -315,8 +324,8 @@ fun StatisticsScreen(
 @Composable
 private fun NutrientStatCard(
     title: String,
-    items: List<Pair<String, Double>>,
-    normItems: List<Pair<String, Double>>?
+    items: List<Pair<Int, Double>>,
+    normItems: List<Pair<Int, Double>>?
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -333,20 +342,20 @@ private fun NutrientStatCard(
             // Header
             Row(modifier = Modifier.fillMaxWidth()) {
                 Text(
-                    "Нутриент",
+                    stringResource(R.string.nutrient),
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f)
                 )
                 Text(
-                    "Факт",
+                    stringResource(R.string.actual),
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.width(72.dp)
                 )
                 if (normItems != null) {
                     Text(
-                        "Норма",
+                        stringResource(R.string.target),
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.width(72.dp)
@@ -361,7 +370,7 @@ private fun NutrientStatCard(
             }
             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
-            items.forEachIndexed { index, (name, value) ->
+            items.forEachIndexed { index, (nameRes, value) ->
                 val normValue = normItems?.getOrNull(index)?.second
                 val pct = if (normValue != null && normValue > 0) (value / normValue * 100).toInt() else null
                 val pctColor = when {
@@ -370,6 +379,7 @@ private fun NutrientStatCard(
                     pct >= 50 -> MaterialTheme.colorScheme.onSurface
                     else -> MaterialTheme.colorScheme.error
                 }
+                val name = stringResource(nameRes)
 
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),

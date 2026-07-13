@@ -18,10 +18,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.nutrition.tracker.R
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -60,10 +62,10 @@ fun PhotoCaptureScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Фото еды") },
+                title = { Text(stringResource(R.string.food_photo)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Назад")
+                        Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.back))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -158,7 +160,7 @@ fun PhotoCaptureScreen(
                 ) {
                     Icon(
                         Icons.Default.PhotoCamera,
-                        contentDescription = "Сделать фото",
+                        contentDescription = stringResource(R.string.take_photo),
                         modifier = Modifier.size(36.dp),
                         tint = MaterialTheme.colorScheme.onPrimary
                     )
@@ -174,7 +176,7 @@ fun PhotoCaptureScreen(
                     )
                 ) {
                     Text(
-                        "Сфотографируйте еду для анализа",
+                        stringResource(R.string.photograph_food_to_analyze),
                         modifier = Modifier.padding(12.dp),
                         style = MaterialTheme.typography.bodyLarge
                     )
@@ -185,10 +187,10 @@ fun PhotoCaptureScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
-                    Text("Для фото нужен доступ к камере")
+                    Text(stringResource(R.string.camera_needed_for_photo))
                     Spacer(Modifier.height(16.dp))
                     Button(onClick = { launcher.launch(Manifest.permission.CAMERA) }) {
-                        Text("Разрешить камеру")
+                        Text(stringResource(R.string.allow_camera))
                     }
                 }
             }

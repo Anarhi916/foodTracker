@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 data class OnboardingUiState(
-    val gender: String = "Мужской",
+    val gender: String = "male",
     val age: String = "",
     val weight: String = "",
     val height: String = "",
@@ -45,30 +45,29 @@ class OnboardingViewModel(application: Application) : AndroidViewModel(applicati
         _uiState.value = _uiState.value.copy(goalsText = goals)
     }
 
-    fun submit() {
+    /** Submit with already-converted canonical kg/cm (the screen handles units). */
+    fun submit(weightKg: Double?, heightCm: Double?) {
         val state = _uiState.value
         val age = state.age.toIntOrNull()
-        val weight = state.weight.toDoubleOrNull()
-        val height = state.height.toDoubleOrNull()
-        if (age == null || weight == null || height == null) {
-            _uiState.value = state.copy(error = "Введите корректные возраст, вес и рост")
+        if (age == null || weightKg == null || heightCm == null) {
+            _uiState.value = state.copy(error = getApplication<Application>().getString(com.nutrition.tracker.R.string.enter_valid_age_weight_and_height))
             return
         }
         if (state.goalsText.isBlank()) {
-            _uiState.value = state.copy(error = "Опишите ваши цели")
+            _uiState.value = state.copy(error = getApplication<Application>().getString(com.nutrition.tracker.R.string.describe_your_goals))
             return
         }
 
         viewModelScope.launch {
             _uiState.value = state.copy(isLoading = true, error = null)
             try {
-                repo.saveUserProfile(state.gender, age, weight, height, state.goalsText)
-                repo.calculateAndSaveNorms(state.gender, age, weight, height, state.goalsText)
+                repo.saveUserProfile(state.gender, age, weightKg, heightCm, state.goalsText)
+                repo.calculateAndSaveNorms(state.gender, age, weightKg, heightCm, state.goalsText)
                 _uiState.value = _uiState.value.copy(isLoading = false, isComplete = true)
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    error = "Ошибка: ${e.message}"
+                    error = getApplication<Application>().getString(com.nutrition.tracker.R.string.error_generic, e.message ?: "")
                 )
             }
         }

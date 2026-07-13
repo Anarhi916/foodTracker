@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -32,6 +33,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nutrition.tracker.R
 import com.nutrition.tracker.data.db.FoodCacheEntity
 import com.nutrition.tracker.data.model.NutrientData
 import com.nutrition.tracker.util.FoodShare
@@ -81,7 +83,7 @@ fun SavedProductsScreen(
 
         AlertDialog(
             onDismissRequest = { quickAddEntry = null },
-            title = { Text("Добавить в приём пищи") },
+            title = { Text(stringResource(R.string.add_to_meal)) },
             text = {
                 Column {
                     Text(entry.keyOriginal, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
@@ -89,7 +91,7 @@ fun SavedProductsScreen(
                     OutlinedTextField(
                         value = quickAddWeight,
                         onValueChange = { quickAddWeight = it },
-                        label = { Text("Вес (г)") },
+                        label = { Text(stringResource(R.string.weight_g)) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
@@ -98,7 +100,8 @@ fun SavedProductsScreen(
                     if (w > 0) {
                         val factor = w / 100.0
                         Text(
-                            "%.0f ккал • Б %.1f • Ж %.1f • У %.1f".format(
+                            stringResource(
+                                R.string.macro_summary,
                                 nutrients.calories * factor, nutrients.protein * factor,
                                 nutrients.fat * factor, nutrients.carbs * factor
                             ),
@@ -117,10 +120,10 @@ fun SavedProductsScreen(
                         quickAddEntry = null
                         quickAddWeight = "100"
                     }
-                }) { Text("Добавить") }
+                }) { Text(stringResource(R.string.add)) }
             },
             dismissButton = {
-                TextButton(onClick = { quickAddEntry = null }) { Text("Отмена") }
+                TextButton(onClick = { quickAddEntry = null }) { Text(stringResource(R.string.cancel)) }
             }
         )
     }
@@ -132,13 +135,13 @@ fun SavedProductsScreen(
         } catch (_: Exception) { NutrientData() }
         AlertDialog(
             onDismissRequest = { shareChooserEntry = null },
-            title = { Text("Поделиться") },
+            title = { Text(stringResource(R.string.share)) },
             text = {
                 Column {
                     Text(entry.keyOriginal, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        "Отправьте ссылку через мессенджер или покажите QR-код собеседнику.",
+                        stringResource(R.string.send_the_link_via_messenger_or_show_the_),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -149,13 +152,13 @@ fun SavedProductsScreen(
                     val link = FoodShare.buildShareLink(entry.keyOriginal, entry.keyEn, nutrients)
                     FoodShare.shareViaSystem(context, link, entry.keyOriginal)
                     shareChooserEntry = null
-                }) { Text("Ссылкой") }
+                }) { Text(stringResource(R.string.via_link)) }
             },
             dismissButton = {
                 TextButton(onClick = {
                     qrEntry = entry
                     shareChooserEntry = null
-                }) { Text("QR-кодом") }
+                }) { Text(stringResource(R.string.via_qr_code)) }
             }
         )
     }
@@ -186,7 +189,7 @@ fun SavedProductsScreen(
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "Наведите камеру приложения на код",
+                        stringResource(R.string.point_the_app_camera_at_the_code),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center
@@ -195,7 +198,7 @@ fun SavedProductsScreen(
                     if (bitmap != null) {
                         Image(
                             bitmap = bitmap.asImageBitmap(),
-                            contentDescription = "QR-код",
+                            contentDescription = stringResource(R.string.qr_code),
                             contentScale = ContentScale.Fit,
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -205,20 +208,21 @@ fun SavedProductsScreen(
                         )
                     } else {
                         Text(
-                            "Не удалось сгенерировать QR-код",
+                            stringResource(R.string.couldn_t_generate_qr_code),
                             color = MaterialTheme.colorScheme.error
                         )
                     }
                     Spacer(Modifier.height(20.dp))
                     Text(
-                        "%.0f ккал • Б %.1f • Ж %.1f • У %.1f".format(
+                        stringResource(
+                            R.string.macro_summary,
                             nutrients.calories, nutrients.protein, nutrients.fat, nutrients.carbs
                         ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(Modifier.height(16.dp))
-                    TextButton(onClick = { qrEntry = null }) { Text("Закрыть") }
+                    TextButton(onClick = { qrEntry = null }) { Text(stringResource(R.string.close)) }
                 }
             }
         }
@@ -228,16 +232,16 @@ fun SavedProductsScreen(
     showDeleteConfirm?.let { entry ->
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = null },
-            title = { Text("Удалить?") },
-            text = { Text("Удалить «${entry.keyOriginal}» из кеша?") },
+            title = { Text(stringResource(R.string.delete_2)) },
+            text = { Text(stringResource(R.string.delete_from_the_cache, entry.keyOriginal)) },
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.deleteCachedFood(entry)
                     showDeleteConfirm = null
-                }) { Text("Удалить") }
+                }) { Text(stringResource(R.string.delete)) }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = null }) { Text("Отмена") }
+                TextButton(onClick = { showDeleteConfirm = null }) { Text(stringResource(R.string.cancel)) }
             }
         )
     }
@@ -246,86 +250,86 @@ fun SavedProductsScreen(
     if (showClearAllConfirm) {
         AlertDialog(
             onDismissRequest = { showClearAllConfirm = false },
-            title = { Text("Очистить кеш?") },
-            text = { Text("Выберите что удалить:") },
+            title = { Text(stringResource(R.string.clear_cache_q)) },
+            text = { Text(stringResource(R.string.choose_what_to_delete)) },
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.deleteAllCachedFoods()
                     showClearAllConfirm = false
-                }) { Text("Удалить всё", color = MaterialTheme.colorScheme.error) }
+                }) { Text(stringResource(R.string.delete_all), color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = {
                 Row {
                     TextButton(onClick = {
                         viewModel.deleteAllBarcodeAndSupplementEntries()
                         showClearAllConfirm = false
-                    }) { Text("Только штрих-коды") }
-                    TextButton(onClick = { showClearAllConfirm = false }) { Text("Отмена") }
+                    }) { Text(stringResource(R.string.barcodes_only)) }
+                    TextButton(onClick = { showClearAllConfirm = false }) { Text(stringResource(R.string.cancel)) }
                 }
             }
         )
     }
 
     // Nutrient fields definition (shared between edit and add dialogs)
-    data class Field(val label: String, val unit: String, val get: (NutrientData) -> Double, val set: (NutrientData, Double) -> NutrientData)
+    data class Field(val label: Int, val unit: Int, val get: (NutrientData) -> Double, val set: (NutrientData, Double) -> NutrientData)
     val fields = remember {
         listOf(
-            Field("Калории", "ккал", { it.calories }, { n, v -> n.copy(calories = v) }),
-            Field("Белки", "г", { it.protein }, { n, v -> n.copy(protein = v) }),
-            Field("Жиры", "г", { it.fat }, { n, v -> n.copy(fat = v) }),
-            Field("Насыщенные жиры", "г", { it.saturatedFat }, { n, v -> n.copy(saturatedFat = v) }),
-            Field("Мононенасыщ. жиры", "г", { it.monounsaturatedFat }, { n, v -> n.copy(monounsaturatedFat = v) }),
-            Field("Полиненасыщ. жиры", "г", { it.polyunsaturatedFat }, { n, v -> n.copy(polyunsaturatedFat = v) }),
-            Field("Холестерин", "мг", { it.cholesterol }, { n, v -> n.copy(cholesterol = v) }),
-            Field("Углеводы", "г", { it.carbs }, { n, v -> n.copy(carbs = v) }),
-            Field("Клетчатка", "г", { it.fiber }, { n, v -> n.copy(fiber = v) }),
-            Field("Витамин A", "мкг", { it.vitaminA }, { n, v -> n.copy(vitaminA = v) }),
-            Field("Витамин B1", "мг", { it.vitaminB1 }, { n, v -> n.copy(vitaminB1 = v) }),
-            Field("Витамин B2", "мг", { it.vitaminB2 }, { n, v -> n.copy(vitaminB2 = v) }),
-            Field("Витамин B3", "мг", { it.vitaminB3 }, { n, v -> n.copy(vitaminB3 = v) }),
-            Field("Витамин B5", "мг", { it.vitaminB5 }, { n, v -> n.copy(vitaminB5 = v) }),
-            Field("Витамин B6", "мг", { it.vitaminB6 }, { n, v -> n.copy(vitaminB6 = v) }),
-            Field("Витамин B7", "мкг", { it.vitaminB7 }, { n, v -> n.copy(vitaminB7 = v) }),
-            Field("Витамин B9", "мкг", { it.vitaminB9 }, { n, v -> n.copy(vitaminB9 = v) }),
-            Field("Витамин B12", "мкг", { it.vitaminB12 }, { n, v -> n.copy(vitaminB12 = v) }),
-            Field("Витамин C", "мг", { it.vitaminC }, { n, v -> n.copy(vitaminC = v) }),
-            Field("Витамин D", "мкг", { it.vitaminD }, { n, v -> n.copy(vitaminD = v) }),
-            Field("Витамин E", "мг", { it.vitaminE }, { n, v -> n.copy(vitaminE = v) }),
-            Field("Витамин K", "мкг", { it.vitaminK }, { n, v -> n.copy(vitaminK = v) }),
-            Field("Кальций", "мг", { it.calcium }, { n, v -> n.copy(calcium = v) }),
-            Field("Железо", "мг", { it.iron }, { n, v -> n.copy(iron = v) }),
-            Field("Магний", "мг", { it.magnesium }, { n, v -> n.copy(magnesium = v) }),
-            Field("Фосфор", "мг", { it.phosphorus }, { n, v -> n.copy(phosphorus = v) }),
-            Field("Калий", "мг", { it.potassium }, { n, v -> n.copy(potassium = v) }),
-            Field("Натрий", "мг", { it.sodium }, { n, v -> n.copy(sodium = v) }),
-            Field("Цинк", "мг", { it.zinc }, { n, v -> n.copy(zinc = v) }),
-            Field("Медь", "мг", { it.copper }, { n, v -> n.copy(copper = v) }),
-            Field("Марганец", "мг", { it.manganese }, { n, v -> n.copy(manganese = v) }),
-            Field("Селен", "мкг", { it.selenium }, { n, v -> n.copy(selenium = v) }),
-            Field("Йод", "мкг", { it.iodine }, { n, v -> n.copy(iodine = v) }),
+            Field(R.string.n_calories, R.string.kcal_short, { it.calories }, { n, v -> n.copy(calories = v) }),
+            Field(R.string.n_protein, R.string.gram_short, { it.protein }, { n, v -> n.copy(protein = v) }),
+            Field(R.string.n_fat, R.string.gram_short, { it.fat }, { n, v -> n.copy(fat = v) }),
+            Field(R.string.n_sat_fat, R.string.gram_short, { it.saturatedFat }, { n, v -> n.copy(saturatedFat = v) }),
+            Field(R.string.n_mono_fat, R.string.gram_short, { it.monounsaturatedFat }, { n, v -> n.copy(monounsaturatedFat = v) }),
+            Field(R.string.n_poly_fat, R.string.gram_short, { it.polyunsaturatedFat }, { n, v -> n.copy(polyunsaturatedFat = v) }),
+            Field(R.string.n_cholesterol, R.string.mg_short, { it.cholesterol }, { n, v -> n.copy(cholesterol = v) }),
+            Field(R.string.n_carbs, R.string.gram_short, { it.carbs }, { n, v -> n.copy(carbs = v) }),
+            Field(R.string.n_fiber, R.string.gram_short, { it.fiber }, { n, v -> n.copy(fiber = v) }),
+            Field(R.string.n_vit_a, R.string.mcg_short, { it.vitaminA }, { n, v -> n.copy(vitaminA = v) }),
+            Field(R.string.n_vit_b1, R.string.mg_short, { it.vitaminB1 }, { n, v -> n.copy(vitaminB1 = v) }),
+            Field(R.string.n_vit_b2, R.string.mg_short, { it.vitaminB2 }, { n, v -> n.copy(vitaminB2 = v) }),
+            Field(R.string.n_vit_b3, R.string.mg_short, { it.vitaminB3 }, { n, v -> n.copy(vitaminB3 = v) }),
+            Field(R.string.n_vit_b5, R.string.mg_short, { it.vitaminB5 }, { n, v -> n.copy(vitaminB5 = v) }),
+            Field(R.string.n_vit_b6, R.string.mg_short, { it.vitaminB6 }, { n, v -> n.copy(vitaminB6 = v) }),
+            Field(R.string.n_vit_b7, R.string.mcg_short, { it.vitaminB7 }, { n, v -> n.copy(vitaminB7 = v) }),
+            Field(R.string.n_vit_b9, R.string.mcg_short, { it.vitaminB9 }, { n, v -> n.copy(vitaminB9 = v) }),
+            Field(R.string.n_vit_b12, R.string.mcg_short, { it.vitaminB12 }, { n, v -> n.copy(vitaminB12 = v) }),
+            Field(R.string.n_vit_c, R.string.mg_short, { it.vitaminC }, { n, v -> n.copy(vitaminC = v) }),
+            Field(R.string.n_vit_d, R.string.mcg_short, { it.vitaminD }, { n, v -> n.copy(vitaminD = v) }),
+            Field(R.string.n_vit_e, R.string.mg_short, { it.vitaminE }, { n, v -> n.copy(vitaminE = v) }),
+            Field(R.string.n_vit_k, R.string.mcg_short, { it.vitaminK }, { n, v -> n.copy(vitaminK = v) }),
+            Field(R.string.n_calcium, R.string.mg_short, { it.calcium }, { n, v -> n.copy(calcium = v) }),
+            Field(R.string.n_iron, R.string.mg_short, { it.iron }, { n, v -> n.copy(iron = v) }),
+            Field(R.string.n_magnesium, R.string.mg_short, { it.magnesium }, { n, v -> n.copy(magnesium = v) }),
+            Field(R.string.n_phosphorus, R.string.mg_short, { it.phosphorus }, { n, v -> n.copy(phosphorus = v) }),
+            Field(R.string.n_potassium, R.string.mg_short, { it.potassium }, { n, v -> n.copy(potassium = v) }),
+            Field(R.string.n_sodium, R.string.mg_short, { it.sodium }, { n, v -> n.copy(sodium = v) }),
+            Field(R.string.n_zinc, R.string.mg_short, { it.zinc }, { n, v -> n.copy(zinc = v) }),
+            Field(R.string.n_copper, R.string.mg_short, { it.copper }, { n, v -> n.copy(copper = v) }),
+            Field(R.string.n_manganese, R.string.mg_short, { it.manganese }, { n, v -> n.copy(manganese = v) }),
+            Field(R.string.n_selenium, R.string.mcg_short, { it.selenium }, { n, v -> n.copy(selenium = v) }),
+            Field(R.string.n_iodine, R.string.mcg_short, { it.iodine }, { n, v -> n.copy(iodine = v) }),
         )
     }
 
     // Edit dialog
     editEntry?.let { entry ->
-        val texts = remember(entry) { fields.map { mutableStateOf("%.4f".format(it.get(editNutrients)).trimEnd('0').trimEnd('.')) } }
+        val texts = remember(entry) { fields.map { mutableStateOf("%.4f".format(java.util.Locale.US, it.get(editNutrients)).trimEnd('0').trimEnd('.')) } }
 
         AlertDialog(
             onDismissRequest = { editEntry = null },
-            title = { Text("Редактировать на 100г") },
+            title = { Text(stringResource(R.string.edit_per_100g)) },
             text = {
                 Column(modifier = Modifier.heightIn(max = 400.dp)) {
                     OutlinedTextField(
                         value = editNameRu,
                         onValueChange = { editNameRu = it },
-                        label = { Text("Название") },
+                        label = { Text(stringResource(R.string.name)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)
                     )
                     OutlinedTextField(
                         value = editNameEn,
                         onValueChange = { editNameEn = it },
-                        label = { Text("English name") },
+                        label = { Text(stringResource(R.string.english_name_2)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
                     )
@@ -334,7 +338,7 @@ fun SavedProductsScreen(
                             OutlinedTextField(
                                 value = texts[i].value,
                                 onValueChange = { texts[i].value = it },
-                                label = { Text("${fields[i].label} (${fields[i].unit})") },
+                                label = { Text("${stringResource(fields[i].label)} (${stringResource(fields[i].unit)})") },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
@@ -352,10 +356,10 @@ fun SavedProductsScreen(
                     }
                     viewModel.updateCachedFoodFull(entry, editNameRu.trim(), editNameEn.trim(), updated)
                     editEntry = null
-                }) { Text("Сохранить") }
+                }) { Text(stringResource(R.string.save)) }
             },
             dismissButton = {
-                TextButton(onClick = { editEntry = null }) { Text("Отмена") }
+                TextButton(onClick = { editEntry = null }) { Text(stringResource(R.string.cancel)) }
             }
         )
     }
@@ -364,19 +368,19 @@ fun SavedProductsScreen(
     if (showAddTypeChooser) {
         AlertDialog(
             onDismissRequest = { showAddTypeChooser = false },
-            title = { Text("Что добавить?") },
-            text = { Text("Единичный продукт или блюдо из нескольких ингредиентов?") },
+            title = { Text(stringResource(R.string.what_to_add)) },
+            text = { Text(stringResource(R.string.single_product_or_dish)) },
             confirmButton = {
                 TextButton(onClick = {
                     showAddTypeChooser = false
                     showAddDishDialog = true
-                }) { Text("Блюдо") }
+                }) { Text(stringResource(R.string.dish_fallback)) }
             },
             dismissButton = {
                 TextButton(onClick = {
                     showAddTypeChooser = false
                     showAddDialog = true
-                }) { Text("Продукт") }
+                }) { Text(stringResource(R.string.food)) }
             }
         )
     }
@@ -399,20 +403,20 @@ fun SavedProductsScreen(
 
         AlertDialog(
             onDismissRequest = { showAddDialog = false },
-            title = { Text("Новый продукт (на 100г)") },
+            title = { Text(stringResource(R.string.new_product_100g)) },
             text = {
                 Column(modifier = Modifier.heightIn(max = 400.dp)) {
                     OutlinedTextField(
                         value = addNameRu,
                         onValueChange = { addNameRu = it },
-                        label = { Text("Название *") },
+                        label = { Text(stringResource(R.string.name_2)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)
                     )
                     OutlinedTextField(
                         value = addNameEn,
                         onValueChange = { addNameEn = it },
-                        label = { Text("English name *") },
+                        label = { Text(stringResource(R.string.english_name)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
                     )
@@ -421,7 +425,7 @@ fun SavedProductsScreen(
                             OutlinedTextField(
                                 value = addTexts[i].value,
                                 onValueChange = { addTexts[i].value = it },
-                                label = { Text("${fields[i].label} (${fields[i].unit})") },
+                                label = { Text("${stringResource(fields[i].label)} (${stringResource(fields[i].unit)})") },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
@@ -443,10 +447,10 @@ fun SavedProductsScreen(
                             showAddDialog = false
                         }
                     }
-                ) { Text("Добавить") }
+                ) { Text(stringResource(R.string.add)) }
             },
             dismissButton = {
-                TextButton(onClick = { showAddDialog = false }) { Text("Отмена") }
+                TextButton(onClick = { showAddDialog = false }) { Text(stringResource(R.string.cancel)) }
             }
         )
     }
@@ -454,20 +458,20 @@ fun SavedProductsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Сохранённые продукты") },
+                title = { Text(stringResource(R.string.saved_foods)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Назад")
+                        Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.back))
                     }
                 },
                 actions = {
                     IconButton(onClick = { showAddTypeChooser = true }) {
-                        Icon(Icons.Default.Add, contentDescription = "Добавить",
+                        Icon(Icons.Default.Add, contentDescription = stringResource(R.string.add),
                             tint = MaterialTheme.colorScheme.onPrimary)
                     }
                     if (cachedFoods.isNotEmpty()) {
                         IconButton(onClick = { showClearAllConfirm = true }) {
-                            Icon(Icons.Default.Delete, contentDescription = "Очистить всё",
+                            Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.clear_all),
                                 tint = MaterialTheme.colorScheme.onPrimary)
                         }
                     }
@@ -486,12 +490,12 @@ fun SavedProductsScreen(
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                placeholder = { Text("Поиск продукта...") },
+                placeholder = { Text(stringResource(R.string.search_product)) },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                 trailingIcon = {
                     if (searchQuery.isNotEmpty()) {
                         IconButton(onClick = { searchQuery = "" }) {
-                            Icon(Icons.Default.Close, contentDescription = "Очистить")
+                            Icon(Icons.Default.Close, contentDescription = stringResource(R.string.clear))
                         }
                     }
                 },
@@ -505,7 +509,7 @@ fun SavedProductsScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        "Кеш пуст.\nПродукты сохраняются автоматически\nпри первом добавлении.",
+                        stringResource(R.string.cache_empty_full),
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -518,7 +522,7 @@ fun SavedProductsScreen(
                 ) {
                     item {
                         Text(
-                            "${filteredFoods.size} из ${cachedFoods.size} продуктов",
+                            stringResource(R.string.lld_of_lld_foods, filteredFoods.size, cachedFoods.size),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(bottom = 8.dp)
@@ -537,11 +541,11 @@ fun SavedProductsScreen(
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("Продукт", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(2.5f))
-                                Text("Ккал", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.8f))
-                                Text("Б", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.6f))
-                                Text("Ж", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.6f))
-                                Text("У", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.6f))
+                                Text(stringResource(R.string.food), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(2.5f))
+                                Text(stringResource(R.string.kcal), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.8f))
+                                Text(stringResource(R.string.p), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.6f))
+                                Text(stringResource(R.string.f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.6f))
+                                Text(stringResource(R.string.c), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.6f))
                                 Spacer(Modifier.width(120.dp))
                             }
                         }
@@ -583,7 +587,7 @@ fun SavedProductsScreen(
                                     onClick = { quickAddWeight = "100"; quickAddEntry = entry },
                                     modifier = Modifier.size(28.dp)
                                 ) {
-                                    Icon(Icons.Default.Add, contentDescription = "Добавить", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.add), modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
                                 }
                                 IconButton(
                                     onClick = {
@@ -594,19 +598,19 @@ fun SavedProductsScreen(
                                     },
                                     modifier = Modifier.size(28.dp)
                                 ) {
-                                    Icon(Icons.Default.Edit, contentDescription = "Редактировать", modifier = Modifier.size(16.dp))
+                                    Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.edit), modifier = Modifier.size(16.dp))
                                 }
                                 IconButton(
                                     onClick = { shareChooserEntry = entry },
                                     modifier = Modifier.size(28.dp)
                                 ) {
-                                    Icon(Icons.Default.Share, contentDescription = "Поделиться", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                                    Icon(Icons.Default.Share, contentDescription = stringResource(R.string.share), modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
                                 }
                                 IconButton(
                                     onClick = { showDeleteConfirm = entry },
                                     modifier = Modifier.size(28.dp)
                                 ) {
-                                    Icon(Icons.Default.Close, contentDescription = "Удалить", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error)
+                                    Icon(Icons.Default.Close, contentDescription = stringResource(R.string.delete), modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error)
                                 }
                                 Spacer(Modifier.width(4.dp))
                             }
@@ -626,7 +630,7 @@ fun SavedProductsScreen(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         CircularProgressIndicator()
                         Spacer(Modifier.height(8.dp))
-                        Text("Обогащаем данные...", style = MaterialTheme.typography.bodyLarge)
+                        Text(stringResource(R.string.enriching_data), style = MaterialTheme.typography.bodyLarge)
                     }
                 }
             }
@@ -660,18 +664,18 @@ fun AddCustomDishDialog(
 
     AlertDialog(
         onDismissRequest = { if (!isProcessing) onDismiss() },
-        title = { Text("Новое блюдо") },
+        title = { Text(stringResource(R.string.new_dish)) },
         text = {
             Column(modifier = Modifier.heightIn(max = 500.dp)) {
                 OutlinedTextField(
                     value = dishName,
                     onValueChange = { dishName = it },
-                    label = { Text("Название блюда *") },
+                    label = { Text(stringResource(R.string.dish_name_required)) },
                     modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                     maxLines = 3
                 )
                 Text(
-                    "Ингредиенты",
+                    stringResource(R.string.ingredients),
                     style = MaterialTheme.typography.labelMedium,
                     modifier = Modifier.padding(vertical = 4.dp)
                 )
@@ -707,7 +711,7 @@ fun AddCustomDishDialog(
                                         }
                                     },
                                     label = {
-                                        Text(if (ing.cachedFood != null) "Из кеша" else "Ингредиент")
+                                        Text(if (ing.cachedFood != null) stringResource(R.string.from_cache) else stringResource(R.string.ingredient))
                                     },
                                     singleLine = true,
                                     modifier = Modifier.weight(1f),
@@ -726,7 +730,7 @@ fun AddCustomDishDialog(
                                             it[idx] = it[idx].copy(weight = newW)
                                         }
                                     },
-                                    label = { Text("г") },
+                                    label = { Text(stringResource(R.string.gram_short)) },
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                                     singleLine = true,
                                     modifier = Modifier.width(80.dp)
@@ -739,7 +743,7 @@ fun AddCustomDishDialog(
                                     ) {
                                         Icon(
                                             Icons.Default.Add,
-                                            contentDescription = "Добавить ингредиент",
+                                            contentDescription = stringResource(R.string.add_ingredient),
                                             tint = MaterialTheme.colorScheme.primary
                                         )
                                     }
@@ -753,7 +757,7 @@ fun AddCustomDishDialog(
                                     ) {
                                         Icon(
                                             Icons.Default.Close,
-                                            contentDescription = "Удалить",
+                                            contentDescription = stringResource(R.string.delete),
                                             tint = MaterialTheme.colorScheme.error
                                         )
                                     }
@@ -798,7 +802,8 @@ fun AddCustomDishDialog(
                                                             overflow = TextOverflow.Ellipsis
                                                         )
                                                         Text(
-                                                            "%.0f ккал • Б%.1f Ж%.1f У%.1f /100г".format(
+                                                            stringResource(
+                                                                R.string.macro_summary_100g,
                                                                 nutrients.calories, nutrients.protein,
                                                                 nutrients.fat, nutrients.carbs
                                                             ),
@@ -831,12 +836,12 @@ fun AddCustomDishDialog(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(modifier = Modifier.size(20.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Анализ ингредиентов...", style = MaterialTheme.typography.bodySmall)
+                        Text(stringResource(R.string.analyzing_ingredients), style = MaterialTheme.typography.bodySmall)
                     }
                 } else {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "Нутриенты будут рассчитаны автоматически по составу.",
+                        stringResource(R.string.nutrients_will_be_calculated_automatical),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -868,10 +873,10 @@ fun AddCustomDishDialog(
                     )
                 },
                 enabled = canSave
-            ) { Text("Создать") }
+            ) { Text(stringResource(R.string.create)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !isProcessing) { Text("Отмена") }
+            TextButton(onClick = onDismiss, enabled = !isProcessing) { Text(stringResource(R.string.cancel)) }
         }
     )
 }
