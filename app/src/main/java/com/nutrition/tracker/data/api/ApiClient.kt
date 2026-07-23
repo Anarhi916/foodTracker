@@ -1,6 +1,7 @@
 package com.nutrition.tracker.data.api
 
 import com.google.gson.GsonBuilder
+import com.nutrition.tracker.BuildConfig
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -19,38 +20,19 @@ object ApiClient {
         })
         .build()
 
-    val geminiApi: GeminiApiService by lazy {
+    // Наш backend-прокси. Base URL из BuildConfig (dev: http://10.0.2.2:3000/ — так
+    // эмулятор Android видит localhost хост-машины).
+    val backendApi: BackendApiService by lazy {
         Retrofit.Builder()
-            .baseUrl("https://generativelanguage.googleapis.com/")
+            .baseUrl(BuildConfig.BACKEND_BASE_URL)
             .client(okHttpClient)
             .addConverterFactory(GsonConverterFactory.create(gson))
             .build()
-            .create(GeminiApiService::class.java)
+            .create(BackendApiService::class.java)
     }
 
-    val openRouterApi: OpenRouterApiService by lazy {
-        Retrofit.Builder()
-            .baseUrl("https://openrouter.ai/")
-            .client(okHttpClient)
-            .addConverterFactory(GsonConverterFactory.create(gson))
-            .build()
-            .create(OpenRouterApiService::class.java)
-    }
-
-    val usdaApi: UsdaFdcApiService by lazy {
-        Retrofit.Builder()
-            .baseUrl("https://api.nal.usda.gov/")
-            .client(
-                OkHttpClient.Builder()
-                    .connectTimeout(15, TimeUnit.SECONDS)
-                    .readTimeout(15, TimeUnit.SECONDS)
-                    .build()
-            )
-            .addConverterFactory(GsonConverterFactory.create(gson))
-            .build()
-            .create(UsdaFdcApiService::class.java)
-    }
-
+    // OpenFoodFacts — остаётся на клиенте (штрихкод/БАД; свой IP → лимит не схлопывается,
+    // ключа нет — прятать нечего). User-Agent обязателен по правилам OFF.
     val openFoodFactsApi: OpenFoodFactsApiService by lazy {
         Retrofit.Builder()
             .baseUrl("https://world.openfoodfacts.org/")

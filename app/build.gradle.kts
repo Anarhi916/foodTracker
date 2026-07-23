@@ -33,15 +33,17 @@ android {
         versionCode = 1
         versionName = "1.0"
 
+        // Backend-прокси: AI/USDA-ключи переехали на сервер (см. backend/ARCHITECTURE.md).
+        // dev-дефолт 10.0.2.2:3000 — так эмулятор Android видит localhost хост-машины.
         buildConfigField(
             "String",
-            "GEMINI_API_KEY",
-            "\"${localProperties.getProperty("gemini.api.key", "")}\""
+            "BACKEND_BASE_URL",
+            "\"${localProperties.getProperty("backend.base.url", "http://10.0.2.2:3000/")}\""
         )
         buildConfigField(
             "String",
-            "OPENROUTER_API_KEY",
-            "\"${localProperties.getProperty("openrouter.api.key", "")}\""
+            "DEV_AUTH_SECRET",
+            "\"${localProperties.getProperty("dev.auth.secret", "change-me-local-dev-secret")}\""
         )
 
         // Ship only the localizations we actually provide.
