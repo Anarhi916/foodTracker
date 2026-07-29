@@ -30,6 +30,20 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="nutritrack" android:host="food" />
             </intent-filter>
+            <!-- OAuth redirect для Apple (Custom Tabs). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="com.nutrition.tracker" android:path="/oauth2redirect" />
+            </intent-filter>
+            <!-- OAuth redirect для Google (iOS client ID reversed scheme). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="com.googleusercontent.apps.634452098876-85n6iabtmhsjm12vqpkdmruk2g72qaq8" />
+            </intent-filter>
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />

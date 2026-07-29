@@ -23,9 +23,6 @@ interface FoodCacheDao {
     @Query("DELETE FROM food_cache WHERE keyOriginal LIKE 'barcode:%' AND keyEn = :keyEn")
     suspend fun deleteBarcodeEntriesByKeyEn(keyEn: String)
 
-    @Query("DELETE FROM food_cache WHERE keyOriginal LIKE 'supplement:%' AND keyEn = :keyEn")
-    suspend fun deleteSupplementEntriesByKeyEn(keyEn: String)
-
     @Query("UPDATE food_cache SET nutrientsPer100gJson = :json WHERE id = :id")
     suspend fun updateNutrients(id: Long, json: String)
 
@@ -37,8 +34,42 @@ interface FoodCacheDao {
 
     @Query("""
         DELETE FROM food_cache WHERE keyEn IN (
-            SELECT keyEn FROM food_cache WHERE keyOriginal LIKE 'barcode:%' OR keyOriginal LIKE 'supplement:%'
+            SELECT keyEn FROM food_cache WHERE keyOriginal LIKE 'barcode:%'
         )
     """)
-    suspend fun deleteAllBarcodeAndSupplementEntries()
+    suspend fun deleteAllBarcodeEntries()
+
+    // --- Синхронизация ---
+    @Query("SELECT * FROM food_cache WHERE updatedAt > :since")
+    suspend fun getChangedSince(since: Long): List<FoodCacheEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entry: FoodCacheEntity)
+
+    // Активные (не удалённые) — для UI.
+    @Query("SELECT * FROM food_cache WHERE deletedAt IS NULL ORDER BY keyOriginal ASC")
+    fun getAllActive(): Flow<List<FoodCacheEntity>>
+
+    // Soft-delete варианты (синхронизируемые tombstone).
+    @Query("UPDATE food_cache SET deletedAt = :now, updatedAt = :now WHERE id = :id")
+    suspend fun softDelete(id: Long, now: Long)
+
+    @Query("UPDATE food_cache SET deletedAt = :now, updatedAt = :now WHERE deletedAt IS NULL")
+    suspend fun softDeleteAll(now: Long)
+
+    @Query("UPDATE food_cache SET deletedAt = :now, updatedAt = :now WHERE keyOriginal LIKE 'barcode:%' AND keyEn = :keyEn AND deletedAt IS NULL")
+    suspend fun softDeleteBarcodeByKeyEn(keyEn: String, now: Long)
+
+    @Query("""
+        UPDATE food_cache SET deletedAt = :now, updatedAt = :now WHERE deletedAt IS NULL AND keyEn IN (
+            SELECT keyEn FROM food_cache WHERE keyOriginal LIKE 'barcode:%'
+        )
+    """)
+    suspend fun softDeleteAllBarcode(now: Long)
+
+    @Query("SELECT * FROM food_cache WHERE keyNormalized = :key LIMIT 1")
+    suspend fun findByNormalizedKeyAny(key: String): FoodCacheEntity?
+
+    @Query("UPDATE food_cache SET updatedAt = :now WHERE id = :id")
+    suspend fun touchUpdatedAt(id: Long, now: Long)
 }

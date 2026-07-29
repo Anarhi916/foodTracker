@@ -45,6 +45,32 @@ android {
             "DEV_AUTH_SECRET",
             "\"${localProperties.getProperty("dev.auth.secret", "change-me-local-dev-secret")}\""
         )
+        // Sign-in (web-OAuth через Custom Tabs). Плейсхолдеры до боевых кредов.
+        buildConfigField(
+            "String",
+            "GOOGLE_WEB_CLIENT_ID",
+            "\"${localProperties.getProperty("google.web.client.id", "REPLACE_GOOGLE_WEB_CLIENT_ID.apps.googleusercontent.com")}\""
+        )
+        buildConfigField(
+            "String",
+            "GOOGLE_IOS_CLIENT_ID",
+            "\"${localProperties.getProperty("google.ios.client.id", "634452098876-85n6iabtmhsjm12vqpkdmruk2g72qaq8.apps.googleusercontent.com")}\""
+        )
+        buildConfigField(
+            "String",
+            "GOOGLE_IOS_CLIENT_ID_SHORT",
+            "\"${localProperties.getProperty("google.ios.client.id.short", "634452098876-85n6iabtmhsjm12vqpkdmruk2g72qaq8")}\""
+        )
+        buildConfigField(
+            "String",
+            "APPLE_SERVICES_ID",
+            "\"${localProperties.getProperty("apple.services.id", "com.nutrition.tracker.signin")}\""
+        )
+        buildConfigField(
+            "String",
+            "OAUTH_REDIRECT_SCHEME",
+            "\"${localProperties.getProperty("oauth.redirect.scheme", "com.nutrition.tracker")}\""
+        )
 
         // Ship only the localizations we actually provide.
         resourceConfigurations += listOf("ru", "uk", "en", "de", "es", "fr", "it", "pt")
@@ -105,6 +131,10 @@ dependencies {
     implementation(libs.camerax.lifecycle)
     implementation(libs.camerax.view)
     implementation(libs.mlkit.barcode)
+
+    // Auth: EncryptedSharedPreferences (токены) + Custom Tabs (web-OAuth)
+    implementation(libs.androidx.security.crypto)
+    implementation(libs.androidx.browser)
 
     // QR code generation
     implementation("com.google.zxing:core:3.5.3")

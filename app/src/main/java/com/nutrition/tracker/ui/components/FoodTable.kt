@@ -15,7 +15,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
@@ -136,6 +135,7 @@ fun FoodEntriesTable(
 
         // Rows
         entries.forEach { entry ->
+            Spacer(Modifier.height(6.dp))
             val nutrients = parseNutrients(entry.nutrientsJson)
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -184,7 +184,7 @@ fun FoodEntriesTable(
                                 Box(
                                     modifier = Modifier
                                         .background(
-                                            Color.White,
+                                            MaterialTheme.colorScheme.surface,
                                             shape = RoundedCornerShape(4.dp)
                                         )
                                         .border(
@@ -228,6 +228,7 @@ fun FoodEntriesTable(
         }
 
         // Totals
+        Spacer(Modifier.height(6.dp))
         Card(
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.secondaryContainer

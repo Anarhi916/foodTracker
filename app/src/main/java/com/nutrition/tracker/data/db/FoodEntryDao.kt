@@ -26,9 +26,20 @@ interface FoodEntryDao {
     @Query("SELECT * FROM food_entries WHERE date >= :startDate AND date <= :endDate ORDER BY date DESC, createdAt DESC")
     suspend fun getEntriesForDateRange(startDate: String, endDate: String): List<FoodEntryEntity>
 
-    @Query("DELETE FROM food_entries WHERE date < :cutoffDate")
-    suspend fun deleteOlderThan(cutoffDate: String)
-
     @Query("SELECT * FROM food_entries WHERE id = :id")
     suspend fun getById(id: Long): FoodEntryEntity?
+
+    // --- Синхронизация ---
+    @Query("SELECT * FROM food_entries WHERE updatedAt > :since")
+    suspend fun getChangedSince(since: Long): List<FoodEntryEntity>
+
+    @Query("SELECT * FROM food_entries WHERE clientId = :clientId LIMIT 1")
+    suspend fun getByClientId(clientId: String): FoodEntryEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entry: FoodEntryEntity)
+
+    // Активные (не удалённые) записи за день — для UI, скрываем tombstones.
+    @Query("SELECT * FROM food_entries WHERE date = :date AND deletedAt IS NULL ORDER BY createdAt DESC")
+    fun getActiveEntriesForDate(date: String): Flow<List<FoodEntryEntity>>
 }

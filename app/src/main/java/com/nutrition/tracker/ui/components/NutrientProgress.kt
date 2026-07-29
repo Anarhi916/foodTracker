@@ -386,7 +386,7 @@ fun SectionHeader(
         onClick = onToggle,
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
         )
     ) {
         Row(

@@ -29,7 +29,6 @@ fun MainScreen(
     onNavigateToHistory: () -> Unit,
     onNavigateToEditProfile: () -> Unit,
     onNavigateToSavedProducts: () -> Unit = {},
-    onNavigateToSupplementScanner: () -> Unit = {},
     onNavigateToStatistics: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -110,18 +109,6 @@ fun MainScreen(
                     Text(stringResource(R.string.cancel))
                 }
             }
-        )
-    }
-
-    // Supplement (BAD) dialog
-    if (uiState.showSupplementDialog) {
-        SupplementServingsDialog(
-            supplementName = uiState.supplementName ?: "",
-            servingSize = uiState.supplementServingSize,
-            servings = uiState.supplementServings,
-            onServingsChange = { viewModel.updateSupplementServings(it) },
-            onConfirm = { viewModel.confirmSupplementAdd() },
-            onDismiss = { viewModel.dismissSupplementDialog() }
         )
     }
 
@@ -253,7 +240,6 @@ fun MainScreen(
                         onAnalyze = { viewModel.analyzeFood() },
                         onScanBarcode = onNavigateToScanner,
                         onTakePhoto = { onNavigateToCamera() },
-                        onScanSupplement = onNavigateToSupplementScanner,
                         isLoading = uiState.isLoading,
                         cachedFoods = cachedFoods,
                         onQuickAdd = { entry, weight ->
@@ -391,7 +377,6 @@ private fun FoodInputSection(
     onAnalyze: () -> Unit,
     onScanBarcode: () -> Unit,
     onTakePhoto: () -> Unit,
-    onScanSupplement: () -> Unit,
     isLoading: Boolean,
     cachedFoods: List<FoodCacheEntity> = emptyList(),
     onQuickAdd: (FoodCacheEntity, Double) -> Unit = { _, _ -> }
@@ -566,14 +551,6 @@ private fun FoodInputSection(
                     modifier = Modifier.weight(1f)
                 ) {
                     Icon(Icons.Default.QrCodeScanner, contentDescription = stringResource(R.string.barcode))
-                }
-
-                OutlinedButton(
-                    onClick = onScanSupplement,
-                    enabled = !isLoading,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("💊")
                 }
 
                 OutlinedButton(

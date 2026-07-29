@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -26,6 +28,7 @@ import com.nutrition.tracker.util.FoodShare
 import com.nutrition.tracker.viewmodel.MainViewModel
 import com.nutrition.tracker.viewmodel.OnboardingViewModel
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -56,6 +59,23 @@ fun NutritionTrackerApp(intent: Intent? = null) {
     val navController = rememberNavController()
     val mainViewModel: MainViewModel = viewModel()
     val onboardingViewModel: OnboardingViewModel = viewModel()
+
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val app = context.applicationContext as NutritionApp
+    val authManager = app.authManager
+    val isSignedIn by authManager.authState.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
+
+    // OAuth redirect — handle both Apple scheme (OAUTH_REDIRECT_SCHEME) and Google scheme.
+    LaunchedEffect(intent) {
+        val data = intent?.data ?: return@LaunchedEffect
+        val scheme = data.scheme ?: return@LaunchedEffect
+        if (scheme == BuildConfig.OAUTH_REDIRECT_SCHEME ||
+            scheme.startsWith("com.googleusercontent.apps.")
+        ) {
+            authManager.handleRedirect(data)
+        }
+    }
 
     // Deep link: import shared food
     var importFood by remember { mutableStateOf<com.nutrition.tracker.util.SharedFood?>(null) }
@@ -112,7 +132,11 @@ fun NutritionTrackerApp(intent: Intent? = null) {
     var startRoute by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
         val hasProfile = mainViewModel.hasProfile.first { it != null }
-        startRoute = if (hasProfile == true) Screen.Main.route else Screen.Onboarding.route
+        startRoute = when {
+            !authManager.authState.value -> Screen.Login.route
+            hasProfile == true -> Screen.Main.route
+            else -> Screen.Onboarding.route
+        }
     }
 
     if (startRoute == null) {
@@ -122,14 +146,59 @@ fun NutritionTrackerApp(intent: Intent? = null) {
         return
     }
 
+    val syncManager = app.syncManager
+    val isInitialSyncing by syncManager.isInitialSyncing.collectAsStateWithLifecycle()
+
+    // Успешный вход → full pull (с busy indicator), затем уходим с Login на онбординг/главный.
+    LaunchedEffect(isSignedIn) {
+        if (isSignedIn && navController.currentDestination?.route == Screen.Login.route) {
+            syncManager.pullOnLogin()
+            val hasProfile = mainViewModel.hasProfile.first { it != null }
+            val target = if (hasProfile == true) Screen.Main.route else Screen.Onboarding.route
+            navController.navigate(target) {
+                popUpTo(Screen.Login.route) { inclusive = true }
+            }
+        }
+    }
+
+    // Выход из аккаунта → сброс маркеров sync + возврат на экран входа.
+    LaunchedEffect(isSignedIn) {
+        if (!isSignedIn && navController.currentDestination?.route != Screen.Login.route) {
+            syncManager.resetOnSignOut()
+            navController.navigate(Screen.Login.route) {
+                popUpTo(0) { inclusive = true }
+            }
+        }
+    }
+
+    // Тихая ежедневная синхронизация при возобновлении приложения.
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner, isSignedIn) {
+        lifecycleOwner.lifecycle.addObserver(
+            androidx.lifecycle.LifecycleEventObserver { _, event ->
+                if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME && isSignedIn) {
+                    scope.launch { syncManager.dailySyncIfNeeded() }
+                }
+            }
+        )
+    }
+
+    Box(Modifier.fillMaxSize()) {
     NavHost(
         navController = navController,
         startDestination = startRoute!!
     ) {
+        composable(Screen.Login.route) {
+            LoginScreen(authManager = authManager, context = context)
+        }
+
         composable(Screen.Onboarding.route) {
             OnboardingScreen(
                 viewModel = onboardingViewModel,
                 onComplete = {
+                    // Профиль создан → сразу заливаем на сервер (иначе уйдёт только
+                    // при следующей ежедневной синхронизации).
+                    scope.launch { syncManager.backgroundSync() }
                     navController.navigate(Screen.Main.route) {
                         popUpTo(Screen.Onboarding.route) { inclusive = true }
                     }
@@ -145,7 +214,6 @@ fun NutritionTrackerApp(intent: Intent? = null) {
                 onNavigateToHistory = { navController.navigate(Screen.History.route) },
                 onNavigateToEditProfile = { navController.navigate(Screen.EditProfile.route) },
                 onNavigateToSavedProducts = { navController.navigate(Screen.SavedProducts.route) },
-                onNavigateToSupplementScanner = { navController.navigate(Screen.SupplementScanner.route) },
                 onNavigateToStatistics = { navController.navigate(Screen.Statistics.route) }
             )
         }
@@ -157,13 +225,6 @@ fun NutritionTrackerApp(intent: Intent? = null) {
         composable(Screen.BarcodeScanner.route) {
             BarcodeScannerScreen(
                 onBarcodeScanned = { barcode -> mainViewModel.onBarcodeScanned(barcode) },
-                onBack = { navController.popBackStack() }
-            )
-        }
-
-        composable(Screen.SupplementScanner.route) {
-            BarcodeScannerScreen(
-                onBarcodeScanned = { barcode -> mainViewModel.onSupplementBarcodeScanned(barcode) },
                 onBack = { navController.popBackStack() }
             )
         }
@@ -186,5 +247,26 @@ fun NutritionTrackerApp(intent: Intent? = null) {
         composable(Screen.Statistics.route) {
             StatisticsScreen(viewModel = mainViewModel, onBack = { navController.popBackStack() })
         }
+    }
+
+    // Busy indicator при первичной загрузке данных (full pull после логина).
+    if (isInitialSyncing) {
+        Box(
+            Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.35f)),
+            contentAlignment = Alignment.Center
+        ) {
+            androidx.compose.foundation.layout.Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(14.dp)
+            ) {
+                CircularProgressIndicator(color = androidx.compose.ui.graphics.Color.White)
+                androidx.compose.material3.Text(
+                    androidx.compose.ui.res.stringResource(com.nutrition.tracker.R.string.loading_your_data),
+                    color = androidx.compose.ui.graphics.Color.White,
+                    style = androidx.compose.material3.MaterialTheme.typography.bodyMedium
+                )
+            }
+        }
+    }
     }
 }

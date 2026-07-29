@@ -10,6 +10,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -24,6 +27,7 @@ import com.nutrition.tracker.R
 import com.nutrition.tracker.data.model.NutrientData
 import com.nutrition.tracker.util.UnitSystem
 import com.nutrition.tracker.viewmodel.MainViewModel
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -33,6 +37,12 @@ fun EditProfileScreen(
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf(stringResource(R.string.profile), stringResource(R.string.daily_targets))
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val app = remember { context.applicationContext as com.nutrition.tracker.NutritionApp }
+    val authManager = remember { app.authManager }
+    val syncManager = remember { app.syncManager }
+    var isSyncing by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -43,10 +53,48 @@ fun EditProfileScreen(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
                     }
                 },
+                actions = {
+                    // Принудительная синхронизация (push + pull).
+                    IconButton(
+                        onClick = {
+                            if (isSyncing) return@IconButton
+                            scope.launch {
+                                isSyncing = true
+                                syncManager.forceSyncNow()
+                                isSyncing = false
+                            }
+                        }
+                    ) {
+                        if (isSyncing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = stringResource(R.string.sync_now)
+                            )
+                        }
+                    }
+                    IconButton(onClick = {
+                        scope.launch {
+                            authManager.signOut()
+                            onBack()
+                        }
+                    }) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ExitToApp,
+                            contentDescription = stringResource(R.string.sign_out)
+                        )
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
+                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 )
             )
         }

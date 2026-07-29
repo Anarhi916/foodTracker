@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Registro nutricional</string>
+    <string name="sync_now">Sincronizar</string>
+    <string name="loading_your_data">Carregando seus dados...</string>
+    <string name="sign_out">Sair</string>
+    <string name="login_subtitle">Entre para salvar seu progresso e assinatura</string>
+    <string name="sign_in_apple">Entrar com a Apple</string>
+    <string name="sign_in_google">Entrar com o Google</string>
     <string name="profile_setup">Configuração do perfil</string>
     <string name="enter_your_details_to_calculate_daily_nu">Preencha os dados para calcular a meta nutricional diária</string>
     <string name="sex">Sexo</string>
@@ -59,10 +65,8 @@
     <string name="review_and_edit_if_needed">Verifique e edite se necessário:</string>
     <string name="name">Nome</string>
     <string name="analyze">Analisar</string>
-    <string name="supplement_found">💊 Suplemento encontrado</string>
-    <string name="number_of_servings">Número de porções:</string>
-    <string name="no_data_for_the_last_14_days">Sem dados dos últimos 14 dias</string>
-    <string name="history_14_days">Histórico (14 dias)</string>
+    <string name="no_data_for_the_last_14_days">Sem dados</string>
+    <string name="history_14_days">Histórico</string>
     <string name="no_entries">Sem registros</string>
     <string name="sat_fat">Gord. saturadas</string>
     <string name="monounsat">Monoinsaturadas</string>
@@ -175,7 +179,6 @@
     <string name="manganese_mg">Manganês (mg)</string>
     <string name="selenium_mcg">Selênio (mcg)</string>
     <string name="iodine_mcg">Iodo (mcg)</string>
-    <string name="serving_size">Tamanho da porção: %1$s</string>
     <string name="lld_of_lld_foods">%1$d de %2$d alimentos</string>
     <string name="top_15">Top 15: %1$s</string>
     <string name="delete_from_the_diary">Excluir %1$s do diário?</string>
@@ -183,8 +186,6 @@
     <string name="analysis_error">Erro na análise: %1$s</string>
     <string name="no_food_found_for_barcode">Alimento não encontrado pelo código de barras: %1$s</string>
     <string name="search_error">Erro na busca: %1$s</string>
-    <string name="no_supplement_found_for_barcode">Suplemento não encontrado pelo código de barras: %1$s</string>
-    <string name="supplement_search_error">Erro na busca de suplemento: %1$s</string>
     <string name="photo_recognition_error">Erro no reconhecimento da foto: %1$s</string>
     <string name="profile_update_error">Erro ao atualizar o perfil: %1$s</string>
     <string name="couldn_t_recognize">Não foi possível reconhecer «%1$s»</string>

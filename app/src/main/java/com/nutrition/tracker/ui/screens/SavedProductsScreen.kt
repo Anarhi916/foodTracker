@@ -2,9 +2,11 @@ package com.nutrition.tracker.ui.screens
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -21,7 +23,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -36,6 +37,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nutrition.tracker.R
 import com.nutrition.tracker.data.db.FoodCacheEntity
 import com.nutrition.tracker.data.model.NutrientData
+import com.nutrition.tracker.ui.theme.ProgressOrange
 import com.nutrition.tracker.util.FoodShare
 import com.nutrition.tracker.util.QrGenerator
 import com.nutrition.tracker.util.transliterateToLatin
@@ -204,7 +206,7 @@ fun SavedProductsScreen(
                                 .fillMaxWidth()
                                 .aspectRatio(1f)
                                 .clip(RoundedCornerShape(12.dp))
-                                .background(Color.White)
+                                .background(MaterialTheme.colorScheme.surface)
                         )
                     } else {
                         Text(
@@ -261,7 +263,7 @@ fun SavedProductsScreen(
             dismissButton = {
                 Row {
                     TextButton(onClick = {
-                        viewModel.deleteAllBarcodeAndSupplementEntries()
+                        viewModel.deleteAllBarcodeEntries()
                         showClearAllConfirm = false
                     }) { Text(stringResource(R.string.barcodes_only)) }
                     TextButton(onClick = { showClearAllConfirm = false }) { Text(stringResource(R.string.cancel)) }
@@ -518,37 +520,16 @@ fun SavedProductsScreen(
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     item {
                         Text(
                             stringResource(R.string.lld_of_lld_foods, filteredFoods.size, cachedFoods.size),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(bottom = 8.dp)
+                            modifier = Modifier.padding(bottom = 4.dp),
+                            textAlign = TextAlign.Center
                         )
-                    }
-
-                    // Header
-                    item {
-                        Card(
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.primaryContainer
-                            ),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(stringResource(R.string.food), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(2.5f))
-                                Text(stringResource(R.string.kcal), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.8f))
-                                Text(stringResource(R.string.p), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.6f))
-                                Text(stringResource(R.string.f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.6f))
-                                Text(stringResource(R.string.c), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.6f))
-                                Spacer(Modifier.width(120.dp))
-                            }
-                        }
                     }
 
                     items(filteredFoods, key = { it.id }) { entry ->
@@ -556,63 +537,79 @@ fun SavedProductsScreen(
                             com.google.gson.Gson().fromJson(entry.nutrientsPer100gJson, NutrientData::class.java)
                         } catch (_: Exception) { NutrientData() }
 
+                        // Карточка продукта — как на iOS: имя / англ. имя / нутриенты + 4 круглые кнопки.
                         Card(
                             modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant
+                            ),
                             elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                         ) {
                             Row(
-                                modifier = Modifier.fillMaxWidth().padding(start = 12.dp, top = 6.dp, bottom = 6.dp),
+                                modifier = Modifier.fillMaxWidth().padding(12.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Column(modifier = Modifier.weight(2.5f)) {
+                                Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         entry.keyOriginal,
-                                        style = MaterialTheme.typography.bodySmall,
+                                        style = MaterialTheme.typography.titleSmall,
                                         maxLines = 2,
                                         overflow = TextOverflow.Ellipsis
                                     )
                                     Text(
                                         entry.keyEn,
-                                        style = MaterialTheme.typography.labelSmall,
+                                        style = MaterialTheme.typography.bodySmall,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
+                                    Text(
+                                        stringResource(
+                                            R.string.macro_summary_100g,
+                                            nutrients.calories, nutrients.protein, nutrients.fat, nutrients.carbs
+                                        ),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                 }
-                                Text("%.0f".format(nutrients.calories), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(0.8f))
-                                Text("%.1f".format(nutrients.protein), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(0.6f))
-                                Text("%.1f".format(nutrients.fat), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(0.6f))
-                                Text("%.1f".format(nutrients.carbs), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(0.6f))
-                                IconButton(
-                                    onClick = { quickAddWeight = "100"; quickAddEntry = entry },
-                                    modifier = Modifier.size(28.dp)
-                                ) {
-                                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.add), modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
-                                }
-                                IconButton(
+                                Spacer(Modifier.width(8.dp))
+                                RoundActionButton(
+                                    icon = Icons.Default.Add,
+                                    contentDescription = stringResource(R.string.add),
+                                    background = MaterialTheme.colorScheme.primary,
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                    onClick = { quickAddWeight = "100"; quickAddEntry = entry }
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                RoundActionButton(
+                                    icon = Icons.Default.Edit,
+                                    contentDescription = stringResource(R.string.edit),
+                                    background = ProgressOrange,
+                                    tint = androidx.compose.ui.graphics.Color.White,
                                     onClick = {
                                         editNutrients = nutrients
                                         editNameRu = entry.keyOriginal
                                         editNameEn = entry.keyEn
                                         editEntry = entry
-                                    },
-                                    modifier = Modifier.size(28.dp)
-                                ) {
-                                    Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.edit), modifier = Modifier.size(16.dp))
-                                }
-                                IconButton(
-                                    onClick = { shareChooserEntry = entry },
-                                    modifier = Modifier.size(28.dp)
-                                ) {
-                                    Icon(Icons.Default.Share, contentDescription = stringResource(R.string.share), modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
-                                }
-                                IconButton(
-                                    onClick = { showDeleteConfirm = entry },
-                                    modifier = Modifier.size(28.dp)
-                                ) {
-                                    Icon(Icons.Default.Close, contentDescription = stringResource(R.string.delete), modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error)
-                                }
-                                Spacer(Modifier.width(4.dp))
+                                    }
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                RoundActionButton(
+                                    icon = Icons.Default.Share,
+                                    contentDescription = stringResource(R.string.share),
+                                    background = MaterialTheme.colorScheme.primary,
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                    onClick = { shareChooserEntry = entry }
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                RoundActionButton(
+                                    icon = Icons.Default.Close,
+                                    contentDescription = stringResource(R.string.delete),
+                                    background = MaterialTheme.colorScheme.error,
+                                    tint = MaterialTheme.colorScheme.onError,
+                                    onClick = { showDeleteConfirm = entry }
+                                )
                             }
                         }
                     }
@@ -636,6 +633,27 @@ fun SavedProductsScreen(
             }
         }
         } // Box
+    }
+}
+
+// Круглая цветная кнопка-иконка (как на iOS: filled circle + иконка внутри).
+@Composable
+private fun RoundActionButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+    background: androidx.compose.ui.graphics.Color,
+    tint: androidx.compose.ui.graphics.Color,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .size(32.dp)
+            .clip(CircleShape)
+            .background(background)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(icon, contentDescription = contentDescription, tint = tint, modifier = Modifier.size(18.dp))
     }
 }
 

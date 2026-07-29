@@ -35,12 +35,6 @@ data class MainUiState(
     val photoFoodName: String = "",
     val photoOriginalFoodName: String = "",
     val photoWeight: String = "200",
-    // Supplement (BAD) dialog
-    val showSupplementDialog: Boolean = false,
-    val supplementName: String? = null,
-    val supplementNutrientsPerServing: NutrientData? = null,
-    val supplementServingSize: String = "",
-    val supplementServings: String = "1",
     // Photo: nutrients per 100g for local recalculation
     val photoNutrientsPer100g: NutrientData? = null,
     val photoFoodNameEn: String = "",
@@ -91,7 +85,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val cachedFoods: StateFlow<List<FoodCacheEntity>> = repo.getAllCachedFoods()
-        .map { list -> list.filter { !it.keyOriginal.startsWith("barcode:") && !it.keyOriginal.startsWith("supplement:") } }
+        .map { list -> list.filter { !it.keyOriginal.startsWith("barcode:") } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init {
@@ -324,71 +318,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.value = _uiState.value.copy(importedSharedFood = null)
     }
 
-    // --- Supplement (BAD) ---
-    fun onSupplementBarcodeScanned(barcode: String) {
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
-            try {
-                val result = repo.lookupSupplementBarcode(barcode)
-                if (result != null) {
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        showSupplementDialog = true,
-                        supplementName = result.name,
-                        supplementNutrientsPerServing = result.nutrientsPerServing,
-                        supplementServingSize = result.servingSize,
-                        supplementServings = "1"
-                    )
-                } else {
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        error = getApplication<Application>().getString(com.nutrition.tracker.R.string.no_supplement_found_for_barcode, barcode)
-                    )
-                }
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = getApplication<Application>().getString(com.nutrition.tracker.R.string.supplement_search_error, e.message ?: "")
-                )
-            }
-        }
-    }
-
-    fun updateSupplementServings(servings: String) {
-        _uiState.value = _uiState.value.copy(supplementServings = servings)
-    }
-
-    fun confirmSupplementAdd() {
-        val state = _uiState.value
-        val name = state.supplementName ?: return
-        val perServing = state.supplementNutrientsPerServing ?: return
-        val servings = state.supplementServings.toDoubleOrNull() ?: return
-        val nutrients = perServing * servings
-
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(
-                showSupplementDialog = false,
-                supplementName = null,
-                supplementNutrientsPerServing = null
-            )
-            repo.addFoodEntry(
-                foodName = "\uD83D\uDC8A $name",
-                weightGrams = servings,
-                nutrients = nutrients,
-                source = "supplement",
-                fromCache = true
-            )
-        }
-    }
-
-    fun dismissSupplementDialog() {
-        _uiState.value = _uiState.value.copy(
-            showSupplementDialog = false,
-            supplementName = null,
-            supplementNutrientsPerServing = null
-        )
-    }
-
     // --- Photo ---
     fun analyzePhoto(imageBytes: ByteArray) {
         viewModelScope.launch {
@@ -566,8 +495,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { repo.deleteAllCachedFoods() }
     }
 
-    fun deleteAllBarcodeAndSupplementEntries() {
-        viewModelScope.launch { repo.deleteAllBarcodeAndSupplementEntries() }
+    fun deleteAllBarcodeEntries() {
+        viewModelScope.launch { repo.deleteAllBarcodeEntries() }
     }
 
     fun updateCachedFood(entry: FoodCacheEntity, nutrients: NutrientData) {

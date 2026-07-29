@@ -10,7 +10,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [UserProfileEntity::class, DailyNormsEntity::class, FoodEntryEntity::class, FoodCacheEntity::class],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -72,6 +72,32 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Поля синхронизации на всех таблицах (см. sync-architecture).
+                val now = System.currentTimeMillis()
+                for (table in listOf("user_profile", "daily_norms", "food_entries", "food_cache")) {
+                    db.execSQL("ALTER TABLE $table ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0")
+                    db.execSQL("ALTER TABLE $table ADD COLUMN deletedAt INTEGER")
+                    // Бэкфилл updatedAt = createdAt (или now, если createdAt пуст).
+                    db.execSQL("UPDATE $table SET updatedAt = COALESCE(NULLIF(createdAt, 0), $now)")
+                }
+                // clientId (uuid) для food_entries — идемпотентный ключ синхронизации.
+                db.execSQL("ALTER TABLE food_entries ADD COLUMN clientId TEXT NOT NULL DEFAULT ''")
+                // Бэкфилл уникальными uuid для существующих строк.
+                val cursor = db.query("SELECT id FROM food_entries")
+                val idIdx = cursor.getColumnIndexOrThrow("id")
+                val ids = ArrayList<Long>()
+                while (cursor.moveToNext()) ids.add(cursor.getLong(idIdx))
+                cursor.close()
+                for (id in ids) {
+                    db.execSQL("UPDATE food_entries SET clientId = ? WHERE id = ?",
+                        arrayOf<Any>(java.util.UUID.randomUUID().toString(), id))
+                }
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_food_entries_clientId ON food_entries (clientId)")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -79,7 +105,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "nutrition_tracker_db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .build().also { INSTANCE = it }
             }
         }

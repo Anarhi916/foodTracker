@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Харчування</string>
+    <string name="sync_now">Синхронізувати</string>
+    <string name="loading_your_data">Завантажуємо ваші дані...</string>
+    <string name="sign_out">Вийти</string>
+    <string name="login_subtitle">Увійдіть, щоб зберегти прогрес і підписку</string>
+    <string name="sign_in_apple">Вхід з Apple</string>
+    <string name="sign_in_google">Увійти через Google</string>
     <string name="profile_setup">Налаштування профілю</string>
     <string name="enter_your_details_to_calculate_daily_nu">Заповніть дані для розрахунку денної норми харчування</string>
     <string name="sex">Стать</string>
@@ -59,10 +65,8 @@
     <string name="review_and_edit_if_needed">Перевірте та за потреби відредагуйте:</string>
     <string name="name">Назва</string>
     <string name="analyze">Аналізувати</string>
-    <string name="supplement_found">💊 Знайдено добавку</string>
-    <string name="number_of_servings">Кількість порцій:</string>
-    <string name="no_data_for_the_last_14_days">Немає даних за останні 14 днів</string>
-    <string name="history_14_days">Історія (14 днів)</string>
+    <string name="no_data_for_the_last_14_days">Немає даних</string>
+    <string name="history_14_days">Історія</string>
     <string name="no_entries">Немає записів</string>
     <string name="sat_fat">Насич. жири</string>
     <string name="monounsat">Мононенасич.</string>
@@ -175,7 +179,6 @@
     <string name="manganese_mg">Марганець (мг)</string>
     <string name="selenium_mcg">Селен (мкг)</string>
     <string name="iodine_mcg">Йод (мкг)</string>
-    <string name="serving_size">Розмір порції: %1$s</string>
     <string name="lld_of_lld_foods">%1$d із %2$d продуктів</string>
     <string name="top_15">Топ-15: %1$s</string>
     <string name="delete_from_the_diary">Видалити %1$s зі щоденника?</string>
@@ -183,8 +186,6 @@
     <string name="analysis_error">Помилка аналізу: %1$s</string>
     <string name="no_food_found_for_barcode">Продукт не знайдено за штрих-кодом: %1$s</string>
     <string name="search_error">Помилка пошуку: %1$s</string>
-    <string name="no_supplement_found_for_barcode">Добавку не знайдено за штрих-кодом: %1$s</string>
-    <string name="supplement_search_error">Помилка пошуку добавки: %1$s</string>
     <string name="photo_recognition_error">Помилка розпізнавання фото: %1$s</string>
     <string name="profile_update_error">Помилка оновлення профілю: %1$s</string>
     <string name="couldn_t_recognize">Не вдалося розпізнати «%1$s»</string>

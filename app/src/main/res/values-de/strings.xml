@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Ernährungstracker</string>
+    <string name="sync_now">Synchronisieren</string>
+    <string name="loading_your_data">Deine Daten werden geladen...</string>
+    <string name="sign_out">Abmelden</string>
+    <string name="login_subtitle">Melde dich an, um Fortschritt und Abo zu sichern</string>
+    <string name="sign_in_apple">Mit Apple anmelden</string>
+    <string name="sign_in_google">Mit Google anmelden</string>
     <string name="profile_setup">Profil einrichten</string>
     <string name="enter_your_details_to_calculate_daily_nu">Daten für die Berechnung des Tagesbedarfs eingeben</string>
     <string name="sex">Geschlecht</string>
@@ -59,10 +65,8 @@
     <string name="review_and_edit_if_needed">Prüfen und bei Bedarf bearbeiten:</string>
     <string name="name">Name</string>
     <string name="analyze">Analysieren</string>
-    <string name="supplement_found">💊 Nahrungsergänzung gefunden</string>
-    <string name="number_of_servings">Anzahl Portionen:</string>
-    <string name="no_data_for_the_last_14_days">Keine Daten der letzten 14 Tage</string>
-    <string name="history_14_days">Verlauf (14 Tage)</string>
+    <string name="no_data_for_the_last_14_days">Keine Daten</string>
+    <string name="history_14_days">Verlauf</string>
     <string name="no_entries">Keine Einträge</string>
     <string name="sat_fat">Ges. Fette</string>
     <string name="monounsat">Einfach unges.</string>
@@ -175,7 +179,6 @@
     <string name="manganese_mg">Mangan (mg)</string>
     <string name="selenium_mcg">Selen (µg)</string>
     <string name="iodine_mcg">Jod (µg)</string>
-    <string name="serving_size">Portionsgröße: %1$s</string>
     <string name="lld_of_lld_foods">%1$d von %2$d Produkten</string>
     <string name="top_15">Top 15: %1$s</string>
     <string name="delete_from_the_diary">%1$s aus dem Tagebuch löschen?</string>
@@ -183,8 +186,6 @@
     <string name="analysis_error">Analysefehler: %1$s</string>
     <string name="no_food_found_for_barcode">Kein Produkt zum Barcode gefunden: %1$s</string>
     <string name="search_error">Suchfehler: %1$s</string>
-    <string name="no_supplement_found_for_barcode">Keine Nahrungsergänzung zum Barcode gefunden: %1$s</string>
-    <string name="supplement_search_error">Fehler bei der Nahrungsergänzungssuche: %1$s</string>
     <string name="photo_recognition_error">Fehler bei der Fotoerkennung: %1$s</string>
     <string name="profile_update_error">Fehler beim Aktualisieren des Profils: %1$s</string>
     <string name="couldn_t_recognize">„%1$s“ konnte nicht erkannt werden</string>

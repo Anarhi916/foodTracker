@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Nutrition Tracker</string>
+    <string name="sync_now">Sync now</string>
+    <string name="loading_your_data">Loading your data...</string>
+    <string name="sign_out">Sign out</string>
+    <string name="login_subtitle">Sign in to save your progress and subscription</string>
+    <string name="sign_in_apple">Sign in with Apple</string>
+    <string name="sign_in_google">Sign in with Google</string>
     <string name="profile_setup">Profile Setup</string>
     <string name="enter_your_details_to_calculate_daily_nu">Enter your details to calculate daily nutrition targets</string>
     <string name="sex">Sex</string>
@@ -59,10 +65,8 @@
     <string name="review_and_edit_if_needed">Review and edit if needed:</string>
     <string name="name">Name</string>
     <string name="analyze">Analyze</string>
-    <string name="supplement_found">💊 Supplement Found</string>
-    <string name="number_of_servings">Number of servings:</string>
-    <string name="no_data_for_the_last_14_days">No data for the last 14 days</string>
-    <string name="history_14_days">History (14 days)</string>
+    <string name="no_data_for_the_last_14_days">No data</string>
+    <string name="history_14_days">History</string>
     <string name="no_entries">No entries</string>
     <string name="sat_fat">Sat. Fat</string>
     <string name="monounsat">Monounsat.</string>
@@ -175,7 +179,6 @@
     <string name="manganese_mg">Manganese (mg)</string>
     <string name="selenium_mcg">Selenium (mcg)</string>
     <string name="iodine_mcg">Iodine (mcg)</string>
-    <string name="serving_size">Serving size: %1$s</string>
     <string name="lld_of_lld_foods">%1$d of %2$d foods</string>
     <string name="top_15">Top 15: %1$s</string>
     <string name="delete_from_the_diary">Delete %1$s from the diary?</string>
@@ -183,8 +186,6 @@
     <string name="analysis_error">Analysis error: %1$s</string>
     <string name="no_food_found_for_barcode">No food found for barcode: %1$s</string>
     <string name="search_error">Search error: %1$s</string>
-    <string name="no_supplement_found_for_barcode">No supplement found for barcode: %1$s</string>
-    <string name="supplement_search_error">Supplement search error: %1$s</string>
     <string name="photo_recognition_error">Photo recognition error: %1$s</string>
     <string name="profile_update_error">Profile update error: %1$s</string>
     <string name="couldn_t_recognize">Couldn\'t recognize \"%1$s\"</string>

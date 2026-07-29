@@ -19,7 +19,7 @@ import java.time.format.DateTimeFormatter
 // Вся многошаговая AI/USDA-логика переехала на сервер (см. backend/ARCHITECTURE.md).
 // Что осталось локально: Room (профиль, нормы, записи, кэш), WeightParser, пересчёт на вес,
 // сохранённые продукты, UX-диалоги (в MainViewModel), OFF-запрос по штрихкоду.
-// Backend отдаёт нутриенты на 100г (supplement — на порцию); клиент масштабирует сам.
+// Backend отдаёт нутриенты на 100г; клиент масштабирует сам.
 class NutritionRepository(
     private val db: AppDatabase,
     private val backendApi: BackendApiService = ApiClient.backendApi,
@@ -50,8 +50,16 @@ class NutritionRepository(
     suspend fun getUserProfileSync(): UserProfileEntity? = db.userProfileDao().getProfileSync()
 
     suspend fun saveUserProfile(gender: String, age: Int, weight: Double, height: Double, goals: String) {
+        // Сохраняем id/createdAt существующего ряда, обновляя updatedAt (для синхронизации).
+        val existing = db.userProfileDao().getProfileSync()
         db.userProfileDao().insert(
-            UserProfileEntity(gender = gender, age = age, weightKg = weight, heightCm = height, goalsText = goals)
+            UserProfileEntity(
+                id = existing?.id ?: 0,
+                gender = gender, age = age, weightKg = weight, heightCm = height, goalsText = goals,
+                createdAt = existing?.createdAt ?: System.currentTimeMillis(),
+                updatedAt = System.currentTimeMillis(),
+                deletedAt = null
+            )
         )
     }
 
@@ -64,8 +72,7 @@ class NutritionRepository(
     }
 
     suspend fun saveDailyNorms(nutrients: NutrientData) {
-        db.dailyNormsDao().deleteAll()
-        db.dailyNormsDao().insert(DailyNormsEntity(nutrientsJson = gson.toJson(nutrients)))
+        upsertNorms(nutrients)
     }
 
     /** Расчёт суточных норм через backend (/v1/norms). Локально сохраняем результат. */
@@ -73,49 +80,64 @@ class NutritionRepository(
         val genderForPrompt = Gender.fromStored(gender).promptValue
         val resp = backendApi.norms(auth, request = NormsRequest(genderForPrompt, age, weight, height, goals))
         val nutrients = unwrap(resp).norms
-        db.dailyNormsDao().deleteAll()
-        db.dailyNormsDao().insert(DailyNormsEntity(nutrientsJson = gson.toJson(nutrients)))
+        upsertNorms(nutrients)
         return nutrients
+    }
+
+    // Обновляем единственный ряд норм in-place (сохраняя id/createdAt), бампим updatedAt.
+    private suspend fun upsertNorms(nutrients: NutrientData) {
+        val existing = db.dailyNormsDao().getNormsSync()
+        db.dailyNormsDao().insert(
+            DailyNormsEntity(
+                id = existing?.id ?: 0,
+                nutrientsJson = gson.toJson(nutrients),
+                createdAt = existing?.createdAt ?: System.currentTimeMillis(),
+                updatedAt = System.currentTimeMillis(),
+                deletedAt = null
+            )
+        )
     }
 
     // --- Food Entries ---
     fun getTodayEntries(): Flow<List<FoodEntryEntity>> =
-        db.foodEntryDao().getEntriesForDate(todayDate())
+        db.foodEntryDao().getActiveEntriesForDate(todayDate())
 
     fun getEntriesForDate(date: String): Flow<List<FoodEntryEntity>> =
-        db.foodEntryDao().getEntriesForDate(date)
+        db.foodEntryDao().getActiveEntriesForDate(date)
 
     suspend fun getEntriesForDateSync(date: String): List<FoodEntryEntity> =
-        db.foodEntryDao().getEntriesForDateSync(date)
+        db.foodEntryDao().getEntriesForDateSync(date).filter { it.deletedAt == null }
 
     suspend fun getEntriesForDateRange(startDate: String, endDate: String): List<FoodEntryEntity> =
-        db.foodEntryDao().getEntriesForDateRange(startDate, endDate)
+        db.foodEntryDao().getEntriesForDateRange(startDate, endDate).filter { it.deletedAt == null }
 
     fun getRecentDates(): Flow<List<String>> = db.foodEntryDao().getRecentDates()
 
     // --- Food Cache ---
-    fun getAllCachedFoods() = db.foodCacheDao().getAll()
+    fun getAllCachedFoods() = db.foodCacheDao().getAllActive()
 
     suspend fun deleteCachedFood(entry: FoodCacheEntity) {
-        db.foodCacheDao().delete(entry)
-        if (!entry.keyOriginal.startsWith("barcode:") && !entry.keyOriginal.startsWith("supplement:")) {
-            db.foodCacheDao().deleteBarcodeEntriesByKeyEn(entry.keyEn)
-            db.foodCacheDao().deleteSupplementEntriesByKeyEn(entry.keyEn)
+        val now = System.currentTimeMillis()
+        db.foodCacheDao().softDelete(entry.id, now)
+        if (!entry.keyOriginal.startsWith("barcode:")) {
+            db.foodCacheDao().softDeleteBarcodeByKeyEn(entry.keyEn, now)
         }
     }
 
-    suspend fun deleteAllCachedFoods() = db.foodCacheDao().deleteAll()
+    suspend fun deleteAllCachedFoods() = db.foodCacheDao().softDeleteAll(System.currentTimeMillis())
 
-    suspend fun deleteAllBarcodeAndSupplementEntries() = db.foodCacheDao().deleteAllBarcodeAndSupplementEntries()
+    suspend fun deleteAllBarcodeEntries() = db.foodCacheDao().softDeleteAllBarcode(System.currentTimeMillis())
 
     suspend fun updateCachedFood(id: Long, nutrients: NutrientData) {
         db.foodCacheDao().updateNutrients(id, gson.toJson(nutrients))
+        db.foodCacheDao().touchUpdatedAt(id, System.currentTimeMillis())
     }
 
     suspend fun updateCachedFoodFull(id: Long, keyOriginal: String, keyEn: String, nutrients: NutrientData) {
         val normalized = normalizeKey(keyOriginal)
         db.foodCacheDao().updateKeys(id, keyOriginal, normalized, keyEn, normalizeKey(keyEn))
         db.foodCacheDao().updateNutrients(id, gson.toJson(nutrients))
+        db.foodCacheDao().touchUpdatedAt(id, System.currentTimeMillis())
     }
 
     suspend fun addManualCachedFood(keyOriginal: String, keyEn: String, nutrients: NutrientData) {
@@ -153,7 +175,7 @@ class NutritionRepository(
         val normalizedEn = normalizeKey(keyEn)
         val existingByKey = db.foodCacheDao().findByNormalizedKey(normalized)
         if (existingByKey != null) return
-        if (!keyOriginal.startsWith("barcode:") && !keyOriginal.startsWith("supplement:")) {
+        if (!keyOriginal.startsWith("barcode:")) {
             val existingByEn = db.foodCacheDao().findByKeyEnNormalized(normalizedEn)
             if (existingByEn != null) return
         }
@@ -316,41 +338,6 @@ class NutritionRepository(
         return Triple(name, enrichedPer100g, false)
     }
 
-    // ─── Supplement (БАД) ───
-    // Локальный кэш → клиент сам идёт в OFF (имя+порция) → backend считает на порцию.
-    suspend fun lookupSupplementBarcode(barcode: String): SupplementResult? {
-        val cacheKey = "supplement:$barcode"
-        val cachedByBarcode = findInCache(cacheKey)
-        if (cachedByBarcode != null) {
-            val servingSize = cachedByBarcode.first.keyOriginal
-                .removePrefix("supplement:$barcode:")
-                .ifBlank { "1 порция" }
-            return SupplementResult(cachedByBarcode.first.keyEn, cachedByBarcode.second, servingSize, true)
-        }
-
-        return try {
-            val response = offApi.getProduct(barcode)
-            val product = response.product ?: return null
-            val name = listOf(product.productNameRu, product.productNameUk, product.productNameEn, product.productName, product.brands)
-                .firstOrNull { !it.isNullOrBlank() } ?: "Dietary supplement (barcode: $barcode)"
-            val servingSize = product.servingSize ?: "1 порция"
-
-            val resp = backendApi.supplement(auth, request = SupplementRequest(name, servingSize, barcode))
-            val perServing = unwrap(resp).nutrientsPerServing
-
-            try {
-                saveToCache("supplement:$barcode:$servingSize", name, perServing)
-            } catch (e: Exception) {
-                Log.w("Repository", "Failed to cache supplement: ${e.message}")
-            }
-
-            SupplementResult(name, perServing, servingSize, false)
-        } catch (e: Exception) {
-            Log.e("Repository", "Supplement barcode lookup failed", e)
-            null
-        }
-    }
-
     // OFF-запрос по штрихкоду (остаётся на клиенте). Маппинг OFF → NutrientData (на 100г).
     private suspend fun lookupBarcode(barcode: String): Pair<String, NutrientData>? {
         return try {
@@ -401,14 +388,6 @@ class NutritionRepository(
         }
     }
 
-    /** БАД-результат для UI-диалога (на порцию). */
-    data class SupplementResult(
-        val name: String,
-        val nutrientsPerServing: NutrientData,
-        val servingSize: String,
-        val fromCache: Boolean
-    )
-
     // --- Food Entries write ---
     suspend fun addFoodEntry(foodName: String, weightGrams: Double, nutrients: NutrientData, source: String = "manual", fromCache: Boolean = false) {
         db.foodEntryDao().insert(
@@ -429,17 +408,19 @@ class NutritionRepository(
         val factor = if (entry.weightGrams > 0) newWeight / entry.weightGrams else 1.0
         val newNutrients = oldNutrients * factor
         db.foodEntryDao().update(
-            entry.copy(weightGrams = newWeight, nutrientsJson = gson.toJson(newNutrients))
+            entry.copy(
+                weightGrams = newWeight,
+                nutrientsJson = gson.toJson(newNutrients),
+                updatedAt = System.currentTimeMillis()
+            )
         )
     }
 
     suspend fun deleteFoodEntry(entry: FoodEntryEntity) {
-        db.foodEntryDao().delete(entry)
-    }
-
-    suspend fun cleanupOldEntries() {
-        val cutoff = LocalDate.now().minusDays(14).format(dateFormatter)
-        db.foodEntryDao().deleteOlderThan(cutoff)
+        // Soft delete — синхронизируется как tombstone (см. sync-architecture).
+        db.foodEntryDao().update(
+            entry.copy(deletedAt = System.currentTimeMillis(), updatedAt = System.currentTimeMillis())
+        )
     }
 
     fun parseNutrients(json: String): NutrientData {
@@ -448,5 +429,92 @@ class NutritionRepository(
         } catch (e: Exception) {
             NutrientData()
         }
+    }
+
+    // ─── Синхронизация (см. sync-architecture) ───
+
+    /** Собрать локальную дельту (всё изменённое после `since` ms). since=0 → всё. */
+    suspend fun collectChanges(since: Long): SyncPushRequest {
+        val profileEntity = db.userProfileDao().getChangedSince(since)
+        val profileDto = profileEntity?.let {
+            SyncProfileDto(it.gender, it.age, it.weightKg, it.heightCm, it.goalsText, it.updatedAt, it.deletedAt)
+        }
+        val normsEntity = db.dailyNormsDao().getChangedSince(since)
+        val normsDto = normsEntity?.let {
+            SyncNormsDto(it.nutrientsJson, it.updatedAt, it.deletedAt)
+        }
+        val entries = db.foodEntryDao().getChangedSince(since).map {
+            SyncEntryDto(it.clientId, it.date, it.foodName, it.foodNameEn, it.weightGrams,
+                it.nutrientsJson, it.source, it.fromCache, it.createdAt, it.updatedAt, it.deletedAt)
+        }
+        val cache = db.foodCacheDao().getChangedSince(since).map {
+            SyncCacheDto(it.keyNormalized, it.keyOriginal, it.keyEn, it.keyEnNormalized,
+                it.nutrientsPer100gJson, it.createdAt, it.updatedAt, it.deletedAt)
+        }
+        return SyncPushRequest(profileDto, normsDto, entries, cache)
+    }
+
+    /** Применить данные с сервера (last-write-wins по updatedAt). */
+    suspend fun applyPulled(resp: SyncPullResponse) {
+        resp.profile?.let { dto ->
+            val existing = db.userProfileDao().getProfileSync()
+            if (existing == null || dto.updatedAt >= existing.updatedAt) {
+                db.userProfileDao().insert(UserProfileEntity(
+                    id = existing?.id ?: 0,
+                    gender = dto.gender, age = dto.age, weightKg = dto.weightKg,
+                    heightCm = dto.heightCm, goalsText = dto.goalsText,
+                    createdAt = existing?.createdAt ?: System.currentTimeMillis(),
+                    updatedAt = dto.updatedAt, deletedAt = dto.deletedAt
+                ))
+            }
+        }
+        resp.norms?.let { dto ->
+            val existing = db.dailyNormsDao().getNormsSync()
+            if (existing == null || dto.updatedAt >= existing.updatedAt) {
+                db.dailyNormsDao().insert(DailyNormsEntity(
+                    id = existing?.id ?: 0,
+                    nutrientsJson = dto.nutrientsJson,
+                    createdAt = existing?.createdAt ?: System.currentTimeMillis(),
+                    updatedAt = dto.updatedAt, deletedAt = dto.deletedAt
+                ))
+            }
+        }
+        for (dto in resp.entries) {
+            val existing = db.foodEntryDao().getByClientId(dto.clientId)
+            if (existing == null || dto.updatedAt >= existing.updatedAt) {
+                db.foodEntryDao().upsert(FoodEntryEntity(
+                    id = existing?.id ?: 0,
+                    clientId = dto.clientId, date = dto.date, foodName = dto.foodName,
+                    foodNameEn = dto.foodNameEn, weightGrams = dto.weightGrams,
+                    nutrientsJson = dto.nutrientsJson, source = dto.source, fromCache = dto.fromCache,
+                    createdAt = dto.createdAt ?: existing?.createdAt ?: System.currentTimeMillis(),
+                    updatedAt = dto.updatedAt, deletedAt = dto.deletedAt
+                ))
+            }
+        }
+        for (dto in resp.foodCache) {
+            val existing = db.foodCacheDao().findByNormalizedKeyAny(dto.keyNormalized)
+            if (existing == null || dto.updatedAt >= existing.updatedAt) {
+                db.foodCacheDao().upsert(FoodCacheEntity(
+                    id = existing?.id ?: 0,
+                    keyOriginal = dto.keyOriginal, keyNormalized = dto.keyNormalized,
+                    keyEn = dto.keyEn, keyEnNormalized = dto.keyEnNormalized,
+                    nutrientsPer100gJson = dto.nutrientsJson,
+                    createdAt = dto.createdAt ?: existing?.createdAt ?: System.currentTimeMillis(),
+                    updatedAt = dto.updatedAt, deletedAt = dto.deletedAt
+                ))
+            }
+        }
+    }
+
+    /** Прямой доступ к push/pull бэкенда для SyncManager. */
+    suspend fun syncPushRequest(req: SyncPushRequest): SyncPushResponse? {
+        val resp = backendApi.syncPush(auth, request = req)
+        return if (resp.isSuccessful) resp.body() else null
+    }
+
+    suspend fun syncPullRequest(since: Long?): SyncPullResponse? {
+        val resp = backendApi.syncPull(auth, since = since)
+        return if (resp.isSuccessful) resp.body() else null
     }
 }

@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Питание от Андрюхи</string>
+    <string name="sync_now">Синхронизировать</string>
+    <string name="loading_your_data">Загружаем ваши данные...</string>
+    <string name="sign_out">Выйти</string>
+    <string name="login_subtitle">Войдите, чтобы сохранить прогресс и подписку</string>
+    <string name="sign_in_apple">Вход с Apple</string>
+    <string name="sign_in_google">Войти через Google</string>
     <string name="profile_setup">Настройка профиля</string>
     <string name="enter_your_details_to_calculate_daily_nu">Заполните данные для расчёта дневной нормы питания</string>
     <string name="sex">Пол</string>
@@ -59,10 +65,8 @@
     <string name="review_and_edit_if_needed">Проверьте и при необходимости отредактируйте:</string>
     <string name="name">Название</string>
     <string name="analyze">Анализировать</string>
-    <string name="supplement_found">💊 Найден БАД</string>
-    <string name="number_of_servings">Количество порций:</string>
-    <string name="no_data_for_the_last_14_days">Нет данных за последние 14 дней</string>
-    <string name="history_14_days">История (14 дней)</string>
+    <string name="no_data_for_the_last_14_days">Нет данных</string>
+    <string name="history_14_days">История</string>
     <string name="no_entries">Нет записей</string>
     <string name="sat_fat">Насыщ. жиры</string>
     <string name="monounsat">Мононенасыщ.</string>
@@ -175,7 +179,6 @@
     <string name="manganese_mg">Марганец (мг)</string>
     <string name="selenium_mcg">Селен (мкг)</string>
     <string name="iodine_mcg">Йод (мкг)</string>
-    <string name="serving_size">Размер порции: %1$s</string>
     <string name="lld_of_lld_foods">%1$d из %2$d продуктов</string>
     <string name="top_15">Топ-15: %1$s</string>
     <string name="delete_from_the_diary">Удалить %1$s из дневника?</string>
@@ -183,8 +186,6 @@
     <string name="analysis_error">Ошибка анализа: %1$s</string>
     <string name="no_food_found_for_barcode">Продукт не найден по штрих-коду: %1$s</string>
     <string name="search_error">Ошибка поиска: %1$s</string>
-    <string name="no_supplement_found_for_barcode">БАД не найден по штрих-коду: %1$s</string>
-    <string name="supplement_search_error">Ошибка поиска БАД: %1$s</string>
     <string name="photo_recognition_error">Ошибка распознавания фото: %1$s</string>
     <string name="profile_update_error">Ошибка обновления профиля: %1$s</string>
     <string name="couldn_t_recognize">Не удалось распознать «%1$s»</string>

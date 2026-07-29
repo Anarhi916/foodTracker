@@ -1,11 +1,11 @@
 package com.nutrition.tracker.ui.navigation
 
 sealed class Screen(val route: String) {
+    data object Login : Screen("login")
     data object Onboarding : Screen("onboarding")
     data object Main : Screen("main")
     data object History : Screen("history")
     data object BarcodeScanner : Screen("barcode_scanner")
-    data object SupplementScanner : Screen("supplement_scanner")
     data object PhotoCapture : Screen("photo_capture")
     data object EditProfile : Screen("edit_profile")
     data object SavedProducts : Screen("saved_products")
