@@ -10,7 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material3.*
@@ -73,7 +73,7 @@ fun EditProfileScreen(
                             )
                         } else {
                             Icon(
-                                imageVector = Icons.Default.Refresh,
+                                imageVector = Icons.Default.Sync,
                                 contentDescription = stringResource(R.string.sync_now)
                             )
                         }
@@ -127,6 +127,9 @@ private fun ProfileDataTab(
     val profile by viewModel.userProfile.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val app = remember { context.applicationContext as com.nutrition.tracker.NutritionApp }
+    var showDeleteAccount by remember { mutableStateOf(false) }
 
     var gender by remember { mutableStateOf("male") }
     var age by remember { mutableStateOf("") }
@@ -369,7 +372,48 @@ private fun ProfileDataTab(
             }
         }
 
+        // Удаление аккаунта (требование Apple/Google). Необратимо.
+        TextButton(
+            onClick = { showDeleteAccount = true },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                stringResource(R.string.delete_account),
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.titleMedium
+            )
+        }
+
         Spacer(Modifier.height(32.dp))
+    }
+
+    if (showDeleteAccount) {
+        AlertDialog(
+            onDismissRequest = { showDeleteAccount = false },
+            title = { Text(stringResource(R.string.delete_account_title)) },
+            text = { Text(stringResource(R.string.delete_account_message)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleteAccount = false
+                    scope.launch {
+                        app.repository.wipeAllLocalData()
+                        app.syncManager.resetOnSignOut()
+                        // deleteAccount() последним: он ставит isSignedIn=false, и
+                        // LaunchedEffect(isSignedIn) в MainActivity сам уводит на Login
+                        // (popUpTo(0)). Свой onBack() тут НЕ вызываем — иначе гонка
+                        // навигации → белый экран.
+                        app.authManager.deleteAccount()
+                    }
+                }) {
+                    Text(stringResource(R.string.delete_confirm), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteAccount = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
     }
 }
 

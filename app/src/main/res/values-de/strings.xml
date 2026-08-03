@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Ernährungstracker</string>
+    <string name="account_deleted_title">Konto gelöscht</string>
+    <string name="account_deleted_message">Dein Konto wurde gelöscht. Melde dich erneut an, um fortzufahren.</string>
+    <string name="delete_account">Konto löschen</string>
+    <string name="delete_account_title">Konto löschen?</string>
+    <string name="delete_account_message">Dein Konto und alle Daten werden dauerhaft gelöscht. Dies kann nicht rückgängig gemacht werden.</string>
+    <string name="delete_confirm">Löschen</string>
     <string name="sync_now">Synchronisieren</string>
     <string name="loading_your_data">Deine Daten werden geladen...</string>
     <string name="sign_out">Abmelden</string>

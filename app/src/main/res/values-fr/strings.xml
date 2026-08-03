@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Suivi nutritionnel</string>
+    <string name="account_deleted_title">Compte supprimé</string>
+    <string name="account_deleted_message">Votre compte a été supprimé. Reconnectez-vous pour continuer.</string>
+    <string name="delete_account">Supprimer le compte</string>
+    <string name="delete_account_title">Supprimer le compte ?</string>
+    <string name="delete_account_message">Votre compte et toutes vos données seront définitivement supprimés. Cette action est irréversible.</string>
+    <string name="delete_confirm">Supprimer</string>
     <string name="sync_now">Synchroniser</string>
     <string name="loading_your_data">Chargement de vos données...</string>
     <string name="sign_out">Se déconnecter</string>

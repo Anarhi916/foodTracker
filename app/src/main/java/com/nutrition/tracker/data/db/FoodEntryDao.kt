@@ -29,6 +29,9 @@ interface FoodEntryDao {
     @Query("SELECT * FROM food_entries WHERE id = :id")
     suspend fun getById(id: Long): FoodEntryEntity?
 
+    @Query("DELETE FROM food_entries")
+    suspend fun deleteAll()
+
     // --- Синхронизация ---
     @Query("SELECT * FROM food_entries WHERE updatedAt > :since")
     suspend fun getChangedSince(since: Long): List<FoodEntryEntity>

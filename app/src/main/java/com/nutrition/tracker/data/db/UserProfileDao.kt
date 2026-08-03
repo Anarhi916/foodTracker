@@ -17,4 +17,7 @@ interface UserProfileDao {
     // --- Синхронизация ---
     @Query("SELECT * FROM user_profile WHERE updatedAt > :since ORDER BY id DESC LIMIT 1")
     suspend fun getChangedSince(since: Long): UserProfileEntity?
+
+    @Query("DELETE FROM user_profile")
+    suspend fun deleteAll()
 }

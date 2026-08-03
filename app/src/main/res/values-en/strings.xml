@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Nutrition Tracker</string>
+    <string name="account_deleted_title">Account deleted</string>
+    <string name="account_deleted_message">Your account has been deleted. Sign in again to continue.</string>
+    <string name="delete_account">Delete account</string>
+    <string name="delete_account_title">Delete account?</string>
+    <string name="delete_account_message">Your account and all your data will be permanently deleted. This action cannot be undone.</string>
+    <string name="delete_confirm">Delete</string>
     <string name="sync_now">Sync now</string>
     <string name="loading_your_data">Loading your data...</string>
     <string name="sign_out">Sign out</string>

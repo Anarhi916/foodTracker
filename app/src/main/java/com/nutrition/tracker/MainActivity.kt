@@ -67,12 +67,19 @@ fun NutritionTrackerApp(intent: Intent? = null) {
     val scope = rememberCoroutineScope()
 
     // OAuth redirect — handle both Apple scheme (OAUTH_REDIRECT_SCHEME) and Google scheme.
+    // Дедуп по самому URI: тот же redirect (с уже использованным кодом) не обрабатываем
+    // повторно — иначе при рекомпозиции/возврате на экран Google отклонит код (invalid_grant)
+    // и вход отскочит обратно на логин.
+    var handledRedirectUri by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(intent) {
         val data = intent?.data ?: return@LaunchedEffect
         val scheme = data.scheme ?: return@LaunchedEffect
+        val uriStr = data.toString()
+        if (uriStr == handledRedirectUri) return@LaunchedEffect
         if (scheme == BuildConfig.OAUTH_REDIRECT_SCHEME ||
             scheme.startsWith("com.googleusercontent.apps.")
         ) {
+            handledRedirectUri = uriStr
             authManager.handleRedirect(data)
         }
     }
@@ -161,14 +168,34 @@ fun NutritionTrackerApp(intent: Intent? = null) {
         }
     }
 
-    // Выход из аккаунта → сброс маркеров sync + возврат на экран входа.
+    // Выход из аккаунта → полный wipe локальных данных + сброс состояния, затем на Login.
+    // Стираем и при обычном выходе (не только удалении): иначе при входе ДРУГОГО аккаунта
+    // данные прошлого юзера покажутся локально и зальются на сервер через pullOnLogin(since=0).
     LaunchedEffect(isSignedIn) {
         if (!isSignedIn && navController.currentDestination?.route != Screen.Login.route) {
+            app.repository.wipeAllLocalData()
             syncManager.resetOnSignOut()
+            mainViewModel.resetTransientState()
+            onboardingViewModel.reset()
             navController.navigate(Screen.Login.route) {
                 popUpTo(0) { inclusive = true }
             }
         }
+    }
+
+    // Аккаунт удалён с другого устройства → уведомление.
+    val accountDeleted by authManager.accountDeletedNotice.collectAsStateWithLifecycle()
+    if (accountDeleted) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { authManager.setAccountDeletedNotice(false) },
+            title = { androidx.compose.material3.Text(androidx.compose.ui.res.stringResource(R.string.account_deleted_title)) },
+            text = { androidx.compose.material3.Text(androidx.compose.ui.res.stringResource(R.string.account_deleted_message)) },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { authManager.setAccountDeletedNotice(false) }) {
+                    androidx.compose.material3.Text("OK")
+                }
+            }
+        )
     }
 
     // Тихая ежедневная синхронизация при возобновлении приложения.

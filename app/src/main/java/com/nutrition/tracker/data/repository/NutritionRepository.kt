@@ -128,6 +128,14 @@ class NutritionRepository(
 
     suspend fun deleteAllBarcodeEntries() = db.foodCacheDao().softDeleteAllBarcode(System.currentTimeMillis())
 
+    /** Полное физическое удаление всех локальных данных (при удалении аккаунта). */
+    suspend fun wipeAllLocalData() {
+        db.foodEntryDao().deleteAll()
+        db.foodCacheDao().deleteAll()
+        db.dailyNormsDao().deleteAll()
+        db.userProfileDao().deleteAll()
+    }
+
     suspend fun updateCachedFood(id: Long, nutrients: NutrientData) {
         db.foodCacheDao().updateNutrients(id, gson.toJson(nutrients))
         db.foodCacheDao().touchUpdatedAt(id, System.currentTimeMillis())

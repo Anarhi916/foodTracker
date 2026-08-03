@@ -25,10 +25,27 @@ object ApiClient {
     // Колбэк «сессия протухла» (refresh не удался) — приложение разлогинивает пользователя.
     @Volatile
     private var onSessionExpired: (() -> Unit)? = null
+    // Колбэк «аккаунт удалён» (бэкенд вернул account_deleted) — wipe + logout.
+    @Volatile
+    private var onAccountDeleted: (() -> Unit)? = null
 
-    fun init(store: TokenStore, onExpired: () -> Unit) {
+    fun init(store: TokenStore, onExpired: () -> Unit, onDeleted: () -> Unit = {}) {
         tokenStore = store
         onSessionExpired = onExpired
+        onAccountDeleted = onDeleted
+    }
+
+    // Ловит 401 с телом {"error":"account_deleted"} → wipe локальных данных + logout.
+    // Стоит ДО authenticator: если аккаунт удалён, рефреш бессмысленен.
+    private val accountDeletedInterceptor = Interceptor { chain ->
+        val response = chain.proceed(chain.request())
+        if (response.code == 401 && !isAuthPath(response.request)) {
+            val peeked = response.peekBody(1024).string()
+            if (peeked.contains("\"account_deleted\"")) {
+                onAccountDeleted?.invoke()
+            }
+        }
+        response
     }
 
     // Bearer из TokenStore для каждого запроса к backend (кроме /v1/auth/*).
@@ -102,6 +119,7 @@ object ApiClient {
             .readTimeout(120, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)
             .addInterceptor(authInterceptor)
+            .addInterceptor(accountDeletedInterceptor)
             .authenticator(refreshAuthenticator)
             .addInterceptor(HttpLoggingInterceptor().apply {
                 level = HttpLoggingInterceptor.Level.BODY

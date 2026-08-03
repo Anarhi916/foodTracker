@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Diario nutrizionale</string>
+    <string name="account_deleted_title">Account eliminato</string>
+    <string name="account_deleted_message">Il tuo account è stato eliminato. Accedi di nuovo per continuare.</string>
+    <string name="delete_account">Elimina account</string>
+    <string name="delete_account_title">Eliminare l\'account?</string>
+    <string name="delete_account_message">Il tuo account e tutti i dati verranno eliminati definitivamente. Questa azione non può essere annullata.</string>
+    <string name="delete_confirm">Elimina</string>
     <string name="sync_now">Sincronizza</string>
     <string name="loading_your_data">Caricamento dei tuoi dati...</string>
     <string name="sign_out">Esci</string>

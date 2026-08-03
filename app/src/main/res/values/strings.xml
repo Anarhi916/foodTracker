@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Питание от Андрюхи</string>
+    <string name="account_deleted_title">Аккаунт удалён</string>
+    <string name="account_deleted_message">Ваш аккаунт был удалён. Войдите снова, чтобы продолжить.</string>
+    <string name="delete_account">Удалить аккаунт</string>
+    <string name="delete_account_title">Удалить аккаунт?</string>
+    <string name="delete_account_message">Аккаунт и все ваши данные будут удалены безвозвратно. Это действие нельзя отменить.</string>
+    <string name="delete_confirm">Удалить</string>
     <string name="sync_now">Синхронизировать</string>
     <string name="loading_your_data">Загружаем ваши данные...</string>
     <string name="sign_out">Выйти</string>

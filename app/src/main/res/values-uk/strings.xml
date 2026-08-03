@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Харчування</string>
+    <string name="account_deleted_title">Акаунт видалено</string>
+    <string name="account_deleted_message">Ваш акаунт було видалено. Увійдіть знову, щоб продовжити.</string>
+    <string name="delete_account">Видалити акаунт</string>
+    <string name="delete_account_title">Видалити акаунт?</string>
+    <string name="delete_account_message">Ваш акаунт і всі дані буде видалено назавжди. Цю дію не можна скасувати.</string>
+    <string name="delete_confirm">Видалити</string>
     <string name="sync_now">Синхронізувати</string>
     <string name="loading_your_data">Завантажуємо ваші дані...</string>
     <string name="sign_out">Вийти</string>

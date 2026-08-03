@@ -19,6 +19,12 @@ class AuthManager(
     private val _authState = MutableStateFlow(tokenStore.isSignedIn)
     val authState: StateFlow<Boolean> = _authState
 
+    // true → аккаунт удалён с другого устройства; UI показывает уведомление и сбрасывает.
+    private val _accountDeletedNotice = MutableStateFlow(false)
+    val accountDeletedNotice: StateFlow<Boolean> = _accountDeletedNotice
+
+    fun setAccountDeletedNotice(v: Boolean) { _accountDeletedNotice.value = v }
+
     @Volatile private var pendingNonce: String? = null
     @Volatile private var pendingCodeVerifier: String? = null
 

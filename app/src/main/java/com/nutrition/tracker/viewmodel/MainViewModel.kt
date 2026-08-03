@@ -433,6 +433,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.value = _uiState.value.copy(error = null)
     }
 
+    /** Полный сброс UI-состояния при разлогине/удалении аккаунта — чтобы незавершённый
+     *  ввод и ошибки не «протекли» в новую сессию. */
+    fun resetTransientState() {
+        _uiState.value = MainUiState()
+    }
+
     suspend fun getEntriesForDate(date: String): List<FoodEntryEntity> {
         return repo.getEntriesForDateSync(date)
     }

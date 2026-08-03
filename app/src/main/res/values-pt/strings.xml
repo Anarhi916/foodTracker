@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Registro nutricional</string>
+    <string name="account_deleted_title">Conta excluída</string>
+    <string name="account_deleted_message">Sua conta foi excluída. Entre novamente para continuar.</string>
+    <string name="delete_account">Excluir conta</string>
+    <string name="delete_account_title">Excluir conta?</string>
+    <string name="delete_account_message">Sua conta e todos os seus dados serão excluídos permanentemente. Esta ação não pode ser desfeita.</string>
+    <string name="delete_confirm">Excluir</string>
     <string name="sync_now">Sincronizar</string>
     <string name="loading_your_data">Carregando seus dados...</string>
     <string name="sign_out">Sair</string>
