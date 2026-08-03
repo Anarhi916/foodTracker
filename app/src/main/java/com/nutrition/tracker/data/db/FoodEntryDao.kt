@@ -32,7 +32,7 @@ interface FoodEntryDao {
     @Query("DELETE FROM food_entries")
     suspend fun deleteAll()
 
-    // --- Синхронизация ---
+    // --- Synchronization ---
     @Query("SELECT * FROM food_entries WHERE updatedAt > :since")
     suspend fun getChangedSince(since: Long): List<FoodEntryEntity>
 
@@ -42,7 +42,7 @@ interface FoodEntryDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entry: FoodEntryEntity)
 
-    // Активные (не удалённые) записи за день — для UI, скрываем tombstones.
+    // Active (not deleted) entries for a day — for the UI, hiding tombstones.
     @Query("SELECT * FROM food_entries WHERE date = :date AND deletedAt IS NULL ORDER BY createdAt DESC")
     fun getActiveEntriesForDate(date: String): Flow<List<FoodEntryEntity>>
 }

@@ -433,8 +433,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.value = _uiState.value.copy(error = null)
     }
 
-    /** Полный сброс UI-состояния при разлогине/удалении аккаунта — чтобы незавершённый
-     *  ввод и ошибки не «протекли» в новую сессию. */
+    /** Full reset of UI state on sign-out/account deletion — so unfinished
+     *  input and errors don't "leak" into the new session. */
     fun resetTransientState() {
         _uiState.value = MainUiState()
     }

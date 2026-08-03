@@ -4,11 +4,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Shapes
 import androidx.compose.ui.unit.dp
 
-// Единая шкала скруглений (Material 3). Крупнее дефолта → современнее, мягче.
+// Unified corner-radius scale (Material 3). Larger than the default → more modern, softer.
 val AppShapes = Shapes(
     extraSmall = RoundedCornerShape(8.dp),
     small = RoundedCornerShape(12.dp),
-    medium = RoundedCornerShape(16.dp),   // карточки
-    large = RoundedCornerShape(20.dp),    // крупные контейнеры
+    medium = RoundedCornerShape(16.dp),   // cards
+    large = RoundedCornerShape(20.dp),    // large containers
     extraLarge = RoundedCornerShape(28.dp)
 )

@@ -19,8 +19,8 @@ import androidx.compose.ui.unit.sp
 import com.nutrition.tracker.R
 import com.nutrition.tracker.data.auth.AuthManager
 
-// Экран входа. Обязателен перед онбордингом/главным (см. план — фаза аккаунтов).
-// Кнопки Apple/Google — по фирменным гайдлайнам провайдеров.
+// Login screen. Required before onboarding/main (see plan — accounts phase).
+// Apple/Google buttons — following the providers' brand guidelines.
 @Composable
 fun LoginScreen(authManager: AuthManager, context: Context) {
     Column(
@@ -31,7 +31,7 @@ fun LoginScreen(authManager: AuthManager, context: Context) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        // Лого — лист в зелёном кружке (как на iOS).
+        // Logo — a leaf in a green circle (like on iOS).
         Image(
             painter = painterResource(R.drawable.ic_login_logo),
             contentDescription = null,
@@ -48,7 +48,7 @@ fun LoginScreen(authManager: AuthManager, context: Context) {
         )
         Spacer(Modifier.height(40.dp))
 
-        // ─── Sign in with Apple: чёрная кнопка, белый логотип + текст ───
+        // ─── Sign in with Apple: black button, white logo + text ───
         Button(
             onClick = { authManager.launchApple(context) },
             modifier = Modifier.fillMaxWidth().height(50.dp),
@@ -73,7 +73,7 @@ fun LoginScreen(authManager: AuthManager, context: Context) {
         }
         Spacer(Modifier.height(12.dp))
 
-        // ─── Sign in with Google: белая кнопка, серая рамка, цветной G ───
+        // ─── Sign in with Google: white button, gray border, colored G ───
         Surface(
             onClick = { authManager.launchGoogle(context) },
             modifier = Modifier.fillMaxWidth().height(50.dp),

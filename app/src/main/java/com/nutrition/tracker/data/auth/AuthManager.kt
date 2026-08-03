@@ -19,7 +19,7 @@ class AuthManager(
     private val _authState = MutableStateFlow(tokenStore.isSignedIn)
     val authState: StateFlow<Boolean> = _authState
 
-    // true → аккаунт удалён с другого устройства; UI показывает уведомление и сбрасывает.
+    // true → account deleted from another device; the UI shows a notification and resets.
     private val _accountDeletedNotice = MutableStateFlow(false)
     val accountDeletedNotice: StateFlow<Boolean> = _accountDeletedNotice
 

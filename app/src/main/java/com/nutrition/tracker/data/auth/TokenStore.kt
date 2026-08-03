@@ -4,7 +4,7 @@ import android.content.Context
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 
-// Безопасное хранение токенов сессии (access/refresh) в EncryptedSharedPreferences.
+// Secure storage of session tokens (access/refresh) in EncryptedSharedPreferences.
 class TokenStore(context: Context) {
     private val prefs by lazy {
         val masterKey = MasterKey.Builder(context)

@@ -17,7 +17,7 @@ interface DailyNormsDao {
     @Query("DELETE FROM daily_norms")
     suspend fun deleteAll()
 
-    // --- Синхронизация ---
+    // --- Synchronization ---
     @Query("SELECT * FROM daily_norms WHERE updatedAt > :since ORDER BY id DESC LIMIT 1")
     suspend fun getChangedSince(since: Long): DailyNormsEntity?
 }

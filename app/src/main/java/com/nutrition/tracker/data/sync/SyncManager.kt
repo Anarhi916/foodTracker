@@ -8,9 +8,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.time.LocalDate
 
-// Синхронизация данных между устройствами (см. sync-architecture).
-// PULL: full при логине (busy indicator) + 1/день silent при открытии.
-// PUSH: delta 1/день silent (только изменённое с last_push_at).
+// Data synchronization between devices (see sync-architecture).
+// PULL: full on login (busy indicator) + 1/day silent on open.
+// PUSH: delta 1/day silent (only what changed since last_push_at).
 class SyncManager(
     private val context: Context,
     private val repo: NutritionRepository,
@@ -18,7 +18,7 @@ class SyncManager(
 ) {
     private val prefs = context.getSharedPreferences("sync_prefs", Context.MODE_PRIVATE)
 
-    // Показывается на LoginScreen/gate: индикатор «Загружаем данные...».
+    // Shown on LoginScreen/gate: a "Loading data..." indicator.
     private val _isInitialSyncing = MutableStateFlow(false)
     val isInitialSyncing: StateFlow<Boolean> = _isInitialSyncing
 
@@ -29,16 +29,16 @@ class SyncManager(
         get() = prefs.getLong(KEY_LAST_PULL, 0)
         set(v) = prefs.edit { putLong(KEY_LAST_PULL, v) }
 
-    /** Full pull при логине (с busy indicator). */
+    /** Full pull on login (with busy indicator). */
     suspend fun pullOnLogin() {
         _isInitialSyncing.value = true
         try {
-            // 1) Тянем всё с сервера и мержим (LWW).
+            // 1) Pull everything from the server and merge (LWW).
             val resp = repo.syncPullRequest(null) ?: return
             repo.applyPulled(resp)
             lastPullAt = resp.serverTime
-            // 2) Заливаем ВСЕ локальные данные (since=0) — важно для апгрейда старых
-            //    пользователей: их дологиновая история/продукты попадут на сервер.
+            // 2) Upload ALL local data (since=0) — important for upgrading old
+            //    users: their pre-login history/products get pushed to the server.
             val allLocal = repo.collectChanges(0)
             val nonEmpty = allLocal.profile != null || allLocal.norms != null ||
                 allLocal.entries.isNotEmpty() || allLocal.foodCache.isNotEmpty()
@@ -49,13 +49,13 @@ class SyncManager(
                 lastPushAt = resp.serverTime
             }
         } catch (_: Exception) {
-            // Тихо — попадём в приложение с локальными данными.
+            // Silently — we'll enter the app with local data.
         } finally {
             _isInitialSyncing.value = false
         }
     }
 
-    /** Ежедневная фоновая синхронизация — не чаще 1 раза в день. */
+    /** Daily background sync — at most once a day. */
     suspend fun dailySyncIfNeeded() {
         if (!authManager.authState.value) return
         val today = LocalDate.now().toString()
@@ -64,13 +64,13 @@ class SyncManager(
         prefs.edit { putString(KEY_LAST_DAILY, today) }
     }
 
-    /** Push дельты, затем pull дельты. Тихо. */
+    /** Push the delta, then pull the delta. Silently. */
     suspend fun backgroundSync() {
         sync(pushSince = lastPushAt)
     }
 
-    /** Принудительная полная синхронизация (кнопка в профиле): пушим ВСЁ (since=0),
-     *  затем pull дельты. Гарантирует заливку данных, созданных до появления аккаунтов. */
+    /** Forced full sync (button in the profile): push EVERYTHING (since=0),
+     *  then pull the delta. Guarantees upload of data created before accounts existed. */
     suspend fun forceSyncNow() {
         sync(pushSince = 0)
     }
@@ -98,7 +98,7 @@ class SyncManager(
         } catch (_: Exception) {}
     }
 
-    /** Сброс маркеров при выходе — новый юзер синкается заново. */
+    /** Reset markers on sign-out — a new user syncs from scratch. */
     fun resetOnSignOut() {
         prefs.edit { clear() }
     }

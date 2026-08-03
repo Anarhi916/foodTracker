@@ -74,17 +74,17 @@ abstract class AppDatabase : RoomDatabase() {
 
         private val MIGRATION_4_5 = object : Migration(4, 5) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                // Поля синхронизации на всех таблицах (см. sync-architecture).
+                // Sync fields on all tables (see sync-architecture).
                 val now = System.currentTimeMillis()
                 for (table in listOf("user_profile", "daily_norms", "food_entries", "food_cache")) {
                     db.execSQL("ALTER TABLE $table ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0")
                     db.execSQL("ALTER TABLE $table ADD COLUMN deletedAt INTEGER")
-                    // Бэкфилл updatedAt = createdAt (или now, если createdAt пуст).
+                    // Backfill updatedAt = createdAt (or now, if createdAt is empty).
                     db.execSQL("UPDATE $table SET updatedAt = COALESCE(NULLIF(createdAt, 0), $now)")
                 }
-                // clientId (uuid) для food_entries — идемпотентный ключ синхронизации.
+                // clientId (uuid) for food_entries — an idempotent sync key.
                 db.execSQL("ALTER TABLE food_entries ADD COLUMN clientId TEXT NOT NULL DEFAULT ''")
-                // Бэкфилл уникальными uuid для существующих строк.
+                // Backfill with unique uuids for existing rows.
                 val cursor = db.query("SELECT id FROM food_entries")
                 val idIdx = cursor.getColumnIndexOrThrow("id")
                 val ids = ArrayList<Long>()

@@ -4,8 +4,8 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 
-// Полная Material 3 tonal-схема (зелёная база). Роли контейнеров/поверхностей
-// заданы явно → карточки и секции зеленовато-нейтральные, а не дефолтные фиолетовые.
+// Full Material 3 tonal scheme (green base). Container/surface roles are
+// set explicitly → cards and sections are greenish-neutral, not the default purple.
 private val LightColorScheme = lightColorScheme(
     primary = md_primary,
     onPrimary = md_onPrimary,

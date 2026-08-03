@@ -15,11 +15,11 @@ import kotlinx.coroutines.flow.Flow
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
-// Репозиторий тонкого клиента: локальная Room-БД/кэш + один вызов backend на действие.
-// Вся многошаговая AI/USDA-логика переехала на сервер (см. backend/ARCHITECTURE.md).
-// Что осталось локально: Room (профиль, нормы, записи, кэш), WeightParser, пересчёт на вес,
-// сохранённые продукты, UX-диалоги (в MainViewModel), OFF-запрос по штрихкоду.
-// Backend отдаёт нутриенты на 100г; клиент масштабирует сам.
+// Thin-client repository: local Room DB/cache + one backend call per action.
+// All the multi-step AI/USDA logic moved to the server (see backend/ARCHITECTURE.md).
+// What remains local: Room (profile, norms, entries, cache), WeightParser, weight recalculation,
+// saved products, UX dialogs (in MainViewModel), OFF barcode lookup.
+// Backend returns nutrients per 100g; the client scales them itself.
 class NutritionRepository(
     private val db: AppDatabase,
     private val backendApi: BackendApiService = ApiClient.backendApi,
@@ -31,7 +31,7 @@ class NutritionRepository(
 
     fun todayDate(): String = LocalDate.now().format(dateFormatter)
 
-    // ─── Общий helper: развернуть Response или бросить с сообщением backend ───
+    // ─── Shared helper: unwrap Response or throw with the backend message ───
     private fun <T> unwrap(resp: retrofit2.Response<T>): T {
         if (resp.isSuccessful) {
             return resp.body() ?: throw Exception("Пустой ответ сервера")
@@ -50,7 +50,7 @@ class NutritionRepository(
     suspend fun getUserProfileSync(): UserProfileEntity? = db.userProfileDao().getProfileSync()
 
     suspend fun saveUserProfile(gender: String, age: Int, weight: Double, height: Double, goals: String) {
-        // Сохраняем id/createdAt существующего ряда, обновляя updatedAt (для синхронизации).
+        // Preserve id/createdAt of the existing row, updating updatedAt (for sync).
         val existing = db.userProfileDao().getProfileSync()
         db.userProfileDao().insert(
             UserProfileEntity(
@@ -75,7 +75,7 @@ class NutritionRepository(
         upsertNorms(nutrients)
     }
 
-    /** Расчёт суточных норм через backend (/v1/norms). Локально сохраняем результат. */
+    /** Calculate daily norms via backend (/v1/norms). Save the result locally. */
     suspend fun calculateAndSaveNorms(gender: String, age: Int, weight: Double, height: Double, goals: String): NutrientData {
         val genderForPrompt = Gender.fromStored(gender).promptValue
         val resp = backendApi.norms(auth, request = NormsRequest(genderForPrompt, age, weight, height, goals))
@@ -84,7 +84,7 @@ class NutritionRepository(
         return nutrients
     }
 
-    // Обновляем единственный ряд норм in-place (сохраняя id/createdAt), бампим updatedAt.
+    // Update the single norms row in-place (keeping id/createdAt), bump updatedAt.
     private suspend fun upsertNorms(nutrients: NutrientData) {
         val existing = db.dailyNormsDao().getNormsSync()
         db.dailyNormsDao().insert(
@@ -128,7 +128,7 @@ class NutritionRepository(
 
     suspend fun deleteAllBarcodeEntries() = db.foodCacheDao().softDeleteAllBarcode(System.currentTimeMillis())
 
-    /** Полное физическое удаление всех локальных данных (при удалении аккаунта). */
+    /** Full physical deletion of all local data (on account deletion). */
     suspend fun wipeAllLocalData() {
         db.foodEntryDao().deleteAll()
         db.foodCacheDao().deleteAll()
@@ -164,7 +164,7 @@ class NutritionRepository(
         )
     }
 
-    // Нормализация ключа (порядок слов не важен) — джойн backend-ответов и Room-кэша.
+    // Key normalization (word order doesn't matter) — joining backend responses and the Room cache.
     private fun normalizeKey(name: String): String =
         name.lowercase().trim().replace(Regex("\\s+"), " ")
             .split(" ").sorted().joinToString(" ")
@@ -206,8 +206,8 @@ class NutritionRepository(
         }
     }
 
-    /** Быстрое добавление сохранённого продукта. Fat-details теперь заполняет backend
-     *  при первом анализе, поэтому здесь просто читаем кэш (без сети). */
+    /** Quick add of a saved product. Fat details are now filled by the backend
+     *  on first analysis, so here we just read the cache (no network). */
     suspend fun enrichFatDetailsForCachedEntry(entry: FoodCacheEntity): NutrientData {
         return parseNutrients(entry.nutrientsPer100gJson)
     }
@@ -221,16 +221,16 @@ class NutritionRepository(
             .filter { it.first.isNotBlank() }
     }
 
-    // ─── Main Food Analysis Pipeline (текст) ───
-    // Локальный парс + кэш → один вызов backend /v1/food/analyze. Вес парсит клиент.
-    // Нутриенты backend отдаёт на 100г → масштабируем.
+    // ─── Main Food Analysis Pipeline (text) ───
+    // Local parse + cache → one backend call /v1/food/analyze. The client parses the weight.
+    // Backend returns nutrients per 100g → we scale them.
     suspend fun analyzeFoodText(foodDescription: String, useCache: Boolean = true): List<FoodAnalysisResult> {
         val localParsed = parseLocalFoodInput(foodDescription)
 
         val cachedResults = mutableListOf<FoodAnalysisResult>()
         val uncachedItems = mutableListOf<Pair<String, Double>>()
 
-        // Локальный кэш: попадание → берём с устройства (сети нет).
+        // Local cache: a hit → take it from the device (no network).
         for ((name, weight) in localParsed) {
             val cached = if (useCache) findInCache(name) else null
             if (cached != null) {
@@ -250,7 +250,7 @@ class NutritionRepository(
             }
         }
 
-        // Всё из локального кэша.
+        // Everything from the local cache.
         if (uncachedItems.isEmpty() && cachedResults.isNotEmpty()) {
             return cachedResults
         }
@@ -267,7 +267,7 @@ class NutritionRepository(
                 throw Exception("Не удалось распознать продукты из описания")
             }
             for (r in backendResults) {
-                // Локальный кэш на устройстве по введённому имени + англ. ключу.
+                // Local cache on the device by the entered name + English key.
                 cacheFoodData(r.foodName, r.foodNameEn, r.nutrientsPer100g)
                 val factor = r.weightGrams / 100.0
                 results.add(
@@ -288,7 +288,7 @@ class NutritionRepository(
         return results
     }
 
-    /** Целое блюдо (фото со сменой имени) через backend /v1/food/dish. Без USDA. */
+    /** Whole dish (photo with a name change) via backend /v1/food/dish. No USDA. */
     suspend fun analyzeSingleDish(dishName: String, weightGrams: Double, useCache: Boolean = false): FoodAnalysisResult {
         if (useCache) {
             val cached = findInCache(dishName)
@@ -305,7 +305,7 @@ class NutritionRepository(
     }
 
     // ─── Photo ───
-    // Фото → backend /v1/food/photo. Нутриенты на 100г (клиент масштабирует на вес).
+    // Photo → backend /v1/food/photo. Nutrients per 100g (client scales to weight).
     suspend fun identifyAndAnalyzeFoodFromPhoto(imageBytes: ByteArray): FoodAnalysisResult {
         val base64 = Base64.encodeToString(imageBytes, Base64.NO_WRAP)
         val resp = backendApi.photo(auth, request = PhotoRequest(base64, AppLocale.languageEnglishName))
@@ -314,19 +314,19 @@ class NutritionRepository(
         return FoodAnalysisResult(body.foodName, body.foodNameEn, body.weightGrams, body.nutrientsPer100g, false)
     }
 
-    // ─── Barcode (OFF на клиенте, обогащение на backend) ───
-    // Локальный кэш → клиент сам идёт в OFF → backend обогащает (/v1/food/enrich). На 100г.
+    // ─── Barcode (OFF on the client, enrichment on the backend) ───
+    // Local cache → the client itself goes to OFF → backend enriches (/v1/food/enrich). Per 100g.
     suspend fun lookupBarcodeWithCache(barcode: String): Triple<String, NutrientData, Boolean>? {
         val cachedByBarcode = findInCache("barcode:$barcode")
         if (cachedByBarcode != null) {
             return Triple(cachedByBarcode.first.keyEn, cachedByBarcode.second, true)
         }
 
-        // Клиент сам ходит в OFF (свой IP → лимит не схлопывается).
+        // The client itself goes to OFF (its own IP → the rate limit doesn't collapse).
         val result = lookupBarcode(barcode) ?: return null
         val (name, offPer100g) = result
 
-        // Backend обогащает недостающие микро/жиры (данные от клиента → в общий кэш НЕ пишет).
+        // Backend enriches missing micros/fats (data from the client → does NOT write to the shared cache).
         val enrichedPer100g = try {
             val resp = backendApi.enrich(auth, request = EnrichRequest(name, offPer100g))
             unwrap(resp).nutrientsPer100g
@@ -335,7 +335,7 @@ class NutritionRepository(
             offPer100g
         }
 
-        // Локальный кэш (только на устройстве).
+        // Local cache (device-only).
         try {
             saveToCache(name, name, enrichedPer100g)
             saveToCache("barcode:$barcode", name, enrichedPer100g)
@@ -346,7 +346,7 @@ class NutritionRepository(
         return Triple(name, enrichedPer100g, false)
     }
 
-    // OFF-запрос по штрихкоду (остаётся на клиенте). Маппинг OFF → NutrientData (на 100г).
+    // OFF barcode lookup (stays on the client). Mapping OFF → NutrientData (per 100g).
     private suspend fun lookupBarcode(barcode: String): Pair<String, NutrientData>? {
         return try {
             val response = offApi.getProduct(barcode)
@@ -425,7 +425,7 @@ class NutritionRepository(
     }
 
     suspend fun deleteFoodEntry(entry: FoodEntryEntity) {
-        // Soft delete — синхронизируется как tombstone (см. sync-architecture).
+        // Soft delete — synchronized as a tombstone (see sync-architecture).
         db.foodEntryDao().update(
             entry.copy(deletedAt = System.currentTimeMillis(), updatedAt = System.currentTimeMillis())
         )
@@ -439,9 +439,9 @@ class NutritionRepository(
         }
     }
 
-    // ─── Синхронизация (см. sync-architecture) ───
+    // ─── Synchronization (see sync-architecture) ───
 
-    /** Собрать локальную дельту (всё изменённое после `since` ms). since=0 → всё. */
+    /** Collect the local delta (everything changed after `since` ms). since=0 → everything. */
     suspend fun collectChanges(since: Long): SyncPushRequest {
         val profileEntity = db.userProfileDao().getChangedSince(since)
         val profileDto = profileEntity?.let {
@@ -462,7 +462,7 @@ class NutritionRepository(
         return SyncPushRequest(profileDto, normsDto, entries, cache)
     }
 
-    /** Применить данные с сервера (last-write-wins по updatedAt). */
+    /** Apply data from the server (last-write-wins by updatedAt). */
     suspend fun applyPulled(resp: SyncPullResponse) {
         resp.profile?.let { dto ->
             val existing = db.userProfileDao().getProfileSync()
@@ -515,7 +515,7 @@ class NutritionRepository(
         }
     }
 
-    /** Прямой доступ к push/pull бэкенда для SyncManager. */
+    /** Direct access to the backend push/pull for SyncManager. */
     suspend fun syncPushRequest(req: SyncPushRequest): SyncPushResponse? {
         val resp = backendApi.syncPush(auth, request = req)
         return if (resp.isSuccessful) resp.body() else null

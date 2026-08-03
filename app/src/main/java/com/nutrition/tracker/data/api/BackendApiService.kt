@@ -7,10 +7,10 @@ import retrofit2.http.HTTP
 import retrofit2.http.Header
 import retrofit2.http.POST
 
-// Единственный сетевой интерфейс: клиент ходит на backend-прокси (/v1/*).
-// AI/USDA-ключи переехали на сервер (см. backend/ARCHITECTURE.md).
-// NutrientData десериализуется напрямую (snake_case @SerializedName совпадает с backend).
-// Backend отдаёт нутриенты на 100г; клиент масштабирует сам.
+// The single network interface: the client talks to the backend proxy (/v1/*).
+// AI/USDA keys moved to the server (see backend/ARCHITECTURE.md).
+// NutrientData is deserialized directly (snake_case @SerializedName matches the backend).
+// Backend returns nutrients per 100g; the client scales them itself.
 interface BackendApiService {
 
     @POST("v1/food/analyze")
@@ -96,7 +96,7 @@ data class NormsRequest(
     val gender: String, val age: Int, val weight: Double, val height: Double, val goals: String
 )
 
-// ─── Response DTO (camelCase — как отдаёт backend) ───
+// ─── Response DTO (camelCase — as the backend returns) ───
 
 data class BackendFoodResult(
     val foodName: String = "",
@@ -125,7 +125,7 @@ data class RefreshRequest(val refreshToken: String)
 data class TokenResponse(val accessToken: String = "", val refreshToken: String = "", val expiresIn: Int = 0)
 data class OkResponse(val ok: Boolean = false)
 
-// ─── Sync DTO (время — epoch-миллисекунды, совпадает с backend и iOS) ───
+// ─── Sync DTO (time — epoch milliseconds, matches the backend and iOS) ───
 
 data class SyncProfileDto(
     val gender: String, val age: Int, val weightKg: Double, val heightCm: Double,

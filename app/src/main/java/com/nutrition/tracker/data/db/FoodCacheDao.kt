@@ -39,18 +39,18 @@ interface FoodCacheDao {
     """)
     suspend fun deleteAllBarcodeEntries()
 
-    // --- Синхронизация ---
+    // --- Synchronization ---
     @Query("SELECT * FROM food_cache WHERE updatedAt > :since")
     suspend fun getChangedSince(since: Long): List<FoodCacheEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entry: FoodCacheEntity)
 
-    // Активные (не удалённые) — для UI.
+    // Active (not deleted) — for the UI.
     @Query("SELECT * FROM food_cache WHERE deletedAt IS NULL ORDER BY keyOriginal ASC")
     fun getAllActive(): Flow<List<FoodCacheEntity>>
 
-    // Soft-delete варианты (синхронизируемые tombstone).
+    // Soft-delete variants (synchronizable tombstones).
     @Query("UPDATE food_cache SET deletedAt = :now, updatedAt = :now WHERE id = :id")
     suspend fun softDelete(id: Long, now: Long)
 

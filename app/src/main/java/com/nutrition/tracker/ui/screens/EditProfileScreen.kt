@@ -54,7 +54,7 @@ fun EditProfileScreen(
                     }
                 },
                 actions = {
-                    // Принудительная синхронизация (push + pull).
+                    // Force sync (push + pull).
                     IconButton(
                         onClick = {
                             if (isSyncing) return@IconButton
@@ -372,7 +372,7 @@ private fun ProfileDataTab(
             }
         }
 
-        // Удаление аккаунта (требование Apple/Google). Необратимо.
+        // Account deletion (required by Apple/Google). Irreversible.
         TextButton(
             onClick = { showDeleteAccount = true },
             modifier = Modifier.fillMaxWidth()
@@ -398,10 +398,10 @@ private fun ProfileDataTab(
                     scope.launch {
                         app.repository.wipeAllLocalData()
                         app.syncManager.resetOnSignOut()
-                        // deleteAccount() последним: он ставит isSignedIn=false, и
-                        // LaunchedEffect(isSignedIn) в MainActivity сам уводит на Login
-                        // (popUpTo(0)). Свой onBack() тут НЕ вызываем — иначе гонка
-                        // навигации → белый экран.
+                        // deleteAccount() last: it sets isSignedIn=false, and
+                        // LaunchedEffect(isSignedIn) in MainActivity navigates to Login itself
+                        // (popUpTo(0)). We do NOT call our own onBack() here — otherwise a
+                        // navigation race → white screen.
                         app.authManager.deleteAccount()
                     }
                 }) {

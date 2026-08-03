@@ -14,7 +14,7 @@ interface UserProfileDao {
     @Query("SELECT * FROM user_profile ORDER BY id DESC LIMIT 1")
     suspend fun getProfileSync(): UserProfileEntity?
 
-    // --- Синхронизация ---
+    // --- Synchronization ---
     @Query("SELECT * FROM user_profile WHERE updatedAt > :since ORDER BY id DESC LIMIT 1")
     suspend fun getChangedSince(since: Long): UserProfileEntity?
 

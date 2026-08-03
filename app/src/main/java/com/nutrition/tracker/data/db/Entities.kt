@@ -5,8 +5,8 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 import java.util.UUID
 
-// Поля синхронизации (updatedAt/deletedAt) есть у всех таблиц — см. sync-architecture.
-// FoodEntry дополнительно несёт clientId (uuid) — идемпотентный ключ на бэкенде.
+// Sync fields (updatedAt/deletedAt) exist on all tables — see sync-architecture.
+// FoodEntry additionally carries clientId (uuid) — an idempotent key on the backend.
 
 @Entity(tableName = "user_profile")
 data class UserProfileEntity(

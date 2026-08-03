@@ -25,8 +25,8 @@ class OnboardingViewModel(application: Application) : AndroidViewModel(applicati
     private val _uiState = MutableStateFlow(OnboardingUiState())
     val uiState: StateFlow<OnboardingUiState> = _uiState
 
-    /** Сброс при смене аккаунта — чтобы PII прошлого юзера (пол/возраст/вес/рост/цели)
-     *  не оставалась предзаполненной в онбординге следующего. */
+    /** Reset on account switch — so the previous user's PII (gender/age/weight/height/goals)
+     *  does not stay pre-filled in the next user's onboarding. */
     fun reset() {
         _uiState.value = OnboardingUiState()
     }

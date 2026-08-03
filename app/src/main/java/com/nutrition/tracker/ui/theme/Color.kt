@@ -2,9 +2,9 @@ package com.nutrition.tracker.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Material 3 tonal-палитра на зелёной базе (#1B9E3E). Полный набор ролей, чтобы
-// поверхности/контейнеры были зеленовато-нейтральными и цельными (иначе Material
-// берёт дефолтные фиолетовые тона).
+// Material 3 tonal palette on a green base (#1B9E3E). Full set of roles so that
+// surfaces/containers are greenish-neutral and cohesive (otherwise Material
+// uses the default purple tones).
 
 // --- Light scheme ---
 val md_primary = Color(0xFF1B9E3E)
@@ -51,7 +51,7 @@ val md_dark_surfaceVariant = Color(0xFF404942)
 val md_dark_onSurfaceVariant = Color(0xFFC0C9BF)
 val md_dark_surfaceContainer = Color(0xFF1C211C)
 
-// --- Прогресс-бары нутриентов (семантика) ---
+// --- Nutrient progress bars (semantics) ---
 val ProgressGreen = Color(0xFF2E9E34)
 val ProgressYellow = Color(0xFFF5B700)
 val ProgressOrange = Color(0xFFF57C00)

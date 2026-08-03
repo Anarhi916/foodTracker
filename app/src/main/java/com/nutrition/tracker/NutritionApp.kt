@@ -30,8 +30,8 @@ class NutritionApp : Application() {
         tokenStore = TokenStore(this)
         authManager = AuthManager(tokenStore)
         syncManager = SyncManager(this, repository, authManager)
-        // Bearer-инъекция + refresh-на-401. onExpired → сброс auth-состояния.
-        // onDeleted → аккаунт удалён с другого устройства: wipe локальных данных + logout.
+        // Bearer injection + refresh-on-401. onExpired → reset auth state.
+        // onDeleted → account deleted from another device: wipe local data + logout.
         ApiClient.init(
             tokenStore,
             onExpired = { authManager.refreshAuthState() },

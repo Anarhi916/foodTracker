@@ -67,9 +67,9 @@ fun NutritionTrackerApp(intent: Intent? = null) {
     val scope = rememberCoroutineScope()
 
     // OAuth redirect — handle both Apple scheme (OAUTH_REDIRECT_SCHEME) and Google scheme.
-    // Дедуп по самому URI: тот же redirect (с уже использованным кодом) не обрабатываем
-    // повторно — иначе при рекомпозиции/возврате на экран Google отклонит код (invalid_grant)
-    // и вход отскочит обратно на логин.
+    // Dedup by the URI itself: the same redirect (with an already-used code) is not processed
+    // again — otherwise on recomposition/returning to the screen Google would reject the code
+    // (invalid_grant) and the sign-in would bounce back to login.
     var handledRedirectUri by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(intent) {
         val data = intent?.data ?: return@LaunchedEffect
@@ -156,7 +156,7 @@ fun NutritionTrackerApp(intent: Intent? = null) {
     val syncManager = app.syncManager
     val isInitialSyncing by syncManager.isInitialSyncing.collectAsStateWithLifecycle()
 
-    // Успешный вход → full pull (с busy indicator), затем уходим с Login на онбординг/главный.
+    // Successful sign-in → full pull (with busy indicator), then leave Login for onboarding/main.
     LaunchedEffect(isSignedIn) {
         if (isSignedIn && navController.currentDestination?.route == Screen.Login.route) {
             syncManager.pullOnLogin()
@@ -168,9 +168,9 @@ fun NutritionTrackerApp(intent: Intent? = null) {
         }
     }
 
-    // Выход из аккаунта → полный wipe локальных данных + сброс состояния, затем на Login.
-    // Стираем и при обычном выходе (не только удалении): иначе при входе ДРУГОГО аккаунта
-    // данные прошлого юзера покажутся локально и зальются на сервер через pullOnLogin(since=0).
+    // Sign-out → full wipe of local data + state reset, then to Login.
+    // We also wipe on a regular sign-out (not just deletion): otherwise when ANOTHER account
+    // signs in, the previous user's data would show locally and get uploaded to the server via pullOnLogin(since=0).
     LaunchedEffect(isSignedIn) {
         if (!isSignedIn && navController.currentDestination?.route != Screen.Login.route) {
             app.repository.wipeAllLocalData()
@@ -183,7 +183,7 @@ fun NutritionTrackerApp(intent: Intent? = null) {
         }
     }
 
-    // Аккаунт удалён с другого устройства → уведомление.
+    // Account deleted from another device → notification.
     val accountDeleted by authManager.accountDeletedNotice.collectAsStateWithLifecycle()
     if (accountDeleted) {
         androidx.compose.material3.AlertDialog(
@@ -198,7 +198,7 @@ fun NutritionTrackerApp(intent: Intent? = null) {
         )
     }
 
-    // Тихая ежедневная синхронизация при возобновлении приложения.
+    // Silent daily sync when the app resumes.
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     LaunchedEffect(lifecycleOwner, isSignedIn) {
         lifecycleOwner.lifecycle.addObserver(
@@ -223,8 +223,8 @@ fun NutritionTrackerApp(intent: Intent? = null) {
             OnboardingScreen(
                 viewModel = onboardingViewModel,
                 onComplete = {
-                    // Профиль создан → сразу заливаем на сервер (иначе уйдёт только
-                    // при следующей ежедневной синхронизации).
+                    // Profile created → upload to the server right away (otherwise it would only
+                    // go out at the next daily sync).
                     scope.launch { syncManager.backgroundSync() }
                     navController.navigate(Screen.Main.route) {
                         popUpTo(Screen.Onboarding.route) { inclusive = true }
@@ -276,7 +276,7 @@ fun NutritionTrackerApp(intent: Intent? = null) {
         }
     }
 
-    // Busy indicator при первичной загрузке данных (full pull после логина).
+    // Busy indicator during the initial data load (full pull after login).
     if (isInitialSyncing) {
         Box(
             Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.35f)),

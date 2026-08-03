@@ -19,13 +19,13 @@ import java.util.concurrent.TimeUnit
 object ApiClient {
     private val gson = GsonBuilder().setLenient().create()
 
-    // TokenStore внедряется из NutritionApp.onCreate(). До инициализации Bearer не ставится.
+    // TokenStore is injected from NutritionApp.onCreate(). Bearer isn't set before initialization.
     @Volatile
     private var tokenStore: TokenStore? = null
-    // Колбэк «сессия протухла» (refresh не удался) — приложение разлогинивает пользователя.
+    // "Session expired" callback (refresh failed) — the app signs the user out.
     @Volatile
     private var onSessionExpired: (() -> Unit)? = null
-    // Колбэк «аккаунт удалён» (бэкенд вернул account_deleted) — wipe + logout.
+    // "Account deleted" callback (backend returned account_deleted) — wipe + logout.
     @Volatile
     private var onAccountDeleted: (() -> Unit)? = null
 
@@ -35,8 +35,8 @@ object ApiClient {
         onAccountDeleted = onDeleted
     }
 
-    // Ловит 401 с телом {"error":"account_deleted"} → wipe локальных данных + logout.
-    // Стоит ДО authenticator: если аккаунт удалён, рефреш бессмысленен.
+    // Catches 401 with body {"error":"account_deleted"} → wipe local data + logout.
+    // Placed BEFORE the authenticator: if the account is deleted, a refresh is pointless.
     private val accountDeletedInterceptor = Interceptor { chain ->
         val response = chain.proceed(chain.request())
         if (response.code == 401 && !isAuthPath(response.request)) {
@@ -48,7 +48,7 @@ object ApiClient {
         response
     }
 
-    // Bearer из TokenStore для каждого запроса к backend (кроме /v1/auth/*).
+    // Bearer from TokenStore for every request to the backend (except /v1/auth/*).
     private val authInterceptor = Interceptor { chain ->
         val original = chain.request()
         val access = tokenStore?.accessToken
@@ -58,15 +58,15 @@ object ApiClient {
         chain.proceed(req)
     }
 
-    // На 401 — один раз обновляем сессию refresh-токеном и повторяем запрос.
+    // On 401 — refresh the session once with the refresh token and retry the request.
     private val refreshAuthenticator = Authenticator { _: Route?, response: Response ->
         val store = tokenStore ?: return@Authenticator null
-        if (isAuthPath(response.request)) return@Authenticator null      // не рефрешим сами auth-запросы
-        if (responseCount(response) >= 2) return@Authenticator null      // уже пробовали
+        if (isAuthPath(response.request)) return@Authenticator null      // don't refresh the auth requests themselves
+        if (responseCount(response) >= 2) return@Authenticator null      // already tried
         val refresh = store.refreshToken ?: return@Authenticator null
 
         val newAccess = synchronized(this) {
-            // Возможно, другой поток уже обновил — проверим, не сменился ли access.
+            // Another thread may have already refreshed — check whether access changed.
             val current = store.accessToken
             val sentAccess = response.request.header("Authorization")?.removePrefix("Bearer ")
             if (current != null && current != sentAccess) {
@@ -82,7 +82,7 @@ object ApiClient {
         response.request.newBuilder().header("Authorization", "Bearer $newAccess").build()
     }
 
-    // Синхронный refresh через отдельный минимальный клиент (без интерцепторов).
+    // Synchronous refresh via a separate minimal client (no interceptors).
     private fun tryRefreshBlocking(refresh: String, store: TokenStore): String? {
         return try {
             val body = gson.toJson(RefreshRequest(refresh))
@@ -121,13 +121,19 @@ object ApiClient {
             .addInterceptor(authInterceptor)
             .addInterceptor(accountDeletedInterceptor)
             .authenticator(refreshAuthenticator)
-            .addInterceptor(HttpLoggingInterceptor().apply {
-                level = HttpLoggingInterceptor.Level.BODY
-            })
+            .apply {
+                // Log request bodies ONLY in debug — otherwise tokens and
+                // profile/food data leak into logcat in production.
+                if (BuildConfig.DEBUG) {
+                    addInterceptor(HttpLoggingInterceptor().apply {
+                        level = HttpLoggingInterceptor.Level.BODY
+                    })
+                }
+            }
             .build()
     }
 
-    // Наш backend-прокси. Base URL из BuildConfig (dev: http://10.0.2.2:3000/).
+    // Our backend proxy. Base URL from BuildConfig (dev: http://10.0.2.2:3000/).
     val backendApi: BackendApiService by lazy {
         Retrofit.Builder()
             .baseUrl(BuildConfig.BACKEND_BASE_URL)
@@ -137,7 +143,7 @@ object ApiClient {
             .create(BackendApiService::class.java)
     }
 
-    // OpenFoodFacts — остаётся на клиенте (штрихкод; свой IP). User-Agent обязателен.
+    // OpenFoodFacts — stays on the client (barcode; its own IP). User-Agent is required.
     val openFoodFactsApi: OpenFoodFactsApiService by lazy {
         Retrofit.Builder()
             .baseUrl("https://world.openfoodfacts.org/")

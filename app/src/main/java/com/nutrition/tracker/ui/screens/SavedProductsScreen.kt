@@ -537,7 +537,7 @@ fun SavedProductsScreen(
                             com.google.gson.Gson().fromJson(entry.nutrientsPer100gJson, NutrientData::class.java)
                         } catch (_: Exception) { NutrientData() }
 
-                        // Карточка продукта — как на iOS: имя / англ. имя / нутриенты + 4 круглые кнопки.
+                        // Product card — like on iOS: name / English name / nutrients + 4 round buttons.
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(16.dp),
@@ -636,7 +636,7 @@ fun SavedProductsScreen(
     }
 }
 
-// Круглая цветная кнопка-иконка (как на iOS: filled circle + иконка внутри).
+// Round colored icon button (like on iOS: filled circle + icon inside).
 @Composable
 private fun RoundActionButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
