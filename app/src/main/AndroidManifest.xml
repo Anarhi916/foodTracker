@@ -30,12 +30,13 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="nutritrack" android:host="food" />
             </intent-filter>
-            <!-- OAuth redirect для Apple (Custom Tabs). -->
+            <!-- OAuth redirect for Apple: server callback deep-links back to
+                 com.nutrition.tracker:/apple-auth with our session tokens. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="com.nutrition.tracker" android:path="/oauth2redirect" />
+                <data android:scheme="com.nutrition.tracker" />
             </intent-filter>
             <!-- OAuth redirect для Google (iOS client ID reversed scheme). -->
             <intent-filter>

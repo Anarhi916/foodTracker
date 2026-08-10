@@ -5,7 +5,6 @@ import android.net.Uri
 import androidx.browser.customtabs.CustomTabsIntent
 import com.nutrition.tracker.BuildConfig
 import com.nutrition.tracker.data.api.ApiClient
-import com.nutrition.tracker.data.api.AppleAuthRequest
 import com.nutrition.tracker.data.api.GoogleCodeRequest
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -28,12 +27,13 @@ class AuthManager(
     @Volatile private var pendingNonce: String? = null
     @Volatile private var pendingCodeVerifier: String? = null
 
-    // Apple uses com.nutrition.tracker:/ scheme; Google uses the iOS reversed-client-ID scheme
-    // (iOS OAuth client is public — no client_secret needed for PKCE token exchange).
+    // Apple redirects to our HTTPS server callback (custom schemes are not allowed by Apple).
+    // Google uses the iOS reversed-client-ID scheme (public client — no secret needed for PKCE).
     private val appleRedirectScheme = BuildConfig.OAUTH_REDIRECT_SCHEME
-    private val appleRedirectUri = "$appleRedirectScheme:/oauth2redirect"
     private val googleRedirectScheme = "com.googleusercontent.apps.${BuildConfig.GOOGLE_IOS_CLIENT_ID_SHORT}"
     private val googleRedirectUri = "$googleRedirectScheme:/oauth2redirect"
+    // Backend origin without trailing slash, e.g. https://api.nutritiontracker.uk
+    private val BACKEND_ORIGIN = BuildConfig.BACKEND_BASE_URL.trimEnd('/')
 
     fun refreshAuthState() { _authState.value = tokenStore.isSignedIn }
 
@@ -53,14 +53,17 @@ class AuthManager(
     }
 
     fun launchApple(context: Context) {
+        // Apple does NOT allow custom-scheme redirects — the Return URL must be our HTTPS
+        // server callback. The server exchanges the code, issues our session, and deep-links
+        // back into the app at com.nutrition.tracker:/apple-auth with the tokens.
         val nonce = randomNonce()
         pendingNonce = nonce
         val url = Uri.parse("https://appleid.apple.com/auth/authorize").buildUpon()
             .appendQueryParameter("client_id", BuildConfig.APPLE_SERVICES_ID)
-            .appendQueryParameter("redirect_uri", appleRedirectUri)
+            .appendQueryParameter("redirect_uri", "$BACKEND_ORIGIN/v1/auth/apple/callback")
             .appendQueryParameter("response_type", "code")
             .appendQueryParameter("scope", "email")
-            .appendQueryParameter("response_mode", "query")
+            .appendQueryParameter("response_mode", "form_post")
             .appendQueryParameter("nonce", nonce)
             .build()
         openTab(context, url)
@@ -72,21 +75,29 @@ class AuthManager(
 
     suspend fun handleRedirect(uri: Uri): Boolean {
         val scheme = uri.scheme ?: return false
-        if (scheme != appleRedirectScheme && scheme != googleRedirectScheme) return false
-        val code = uri.getQueryParameter("code") ?: return false
 
+        // Apple flow: server already exchanged the code and deep-links back with tokens.
+        if (scheme == appleRedirectScheme && uri.path?.contains("apple-auth") == true) {
+            val access = uri.getQueryParameter("access")
+            val refresh = uri.getQueryParameter("refresh")
+            return if (!access.isNullOrBlank() && !refresh.isNullOrBlank()) {
+                tokenStore.save(access, refresh)
+                _authState.value = true
+                true
+            } else false
+        }
+
+        // Google flow: we receive the auth code and exchange it via the backend (PKCE).
+        if (scheme != googleRedirectScheme) return false
+        val code = uri.getQueryParameter("code") ?: return false
         return try {
-            val resp = if (pendingCodeVerifier != null) {
-                val verifier = pendingCodeVerifier!!
-                ApiClient.backendApi.authGoogleCode(GoogleCodeRequest(
-                    code = code,
-                    codeVerifier = verifier,
-                    redirectUri = googleRedirectUri,
-                    clientId = BuildConfig.GOOGLE_IOS_CLIENT_ID
-                ))
-            } else {
-                ApiClient.backendApi.authApple(AppleAuthRequest(code = code, nonce = pendingNonce))
-            }
+            val verifier = pendingCodeVerifier ?: return false
+            val resp = ApiClient.backendApi.authGoogleCode(GoogleCodeRequest(
+                code = code,
+                codeVerifier = verifier,
+                redirectUri = googleRedirectUri,
+                clientId = BuildConfig.GOOGLE_IOS_CLIENT_ID
+            ))
             val tokens = resp.body()
             if (resp.isSuccessful && tokens != null && tokens.accessToken.isNotBlank()) {
                 tokenStore.save(tokens.accessToken, tokens.refreshToken)

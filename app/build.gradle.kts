@@ -33,12 +33,13 @@ android {
         versionCode = 1
         versionName = "1.0"
 
-        // Backend-прокси: AI/USDA-ключи переехали на сервер (см. backend/ARCHITECTURE.md).
-        // dev-дефолт 10.0.2.2:3000 — так эмулятор Android видит localhost хост-машины.
+        // Backend proxy: AI/USDA keys moved to the server (see backend/ARCHITECTURE.md).
+        // Default = production URL; override via backend.base.url in local.properties
+        // (e.g. http://10.0.2.2:3000/ so the Android emulator sees the host's localhost).
         buildConfigField(
             "String",
             "BACKEND_BASE_URL",
-            "\"${localProperties.getProperty("backend.base.url", "http://10.0.2.2:3000/")}\""
+            "\"${localProperties.getProperty("backend.base.url", "https://api.nutritiontracker.uk/")}\""
         )
         buildConfigField(
             "String",

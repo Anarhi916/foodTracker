@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DEBUG ONLY. Trusts user-installed CAs so the app works behind a corporate
+     TLS-inspecting proxy (e.g. Cisco Umbrella) during local testing.
+     The release build uses the strict config in src/main and is NOT affected. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
