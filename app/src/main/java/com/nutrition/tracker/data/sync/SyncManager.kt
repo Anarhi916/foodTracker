@@ -37,20 +37,28 @@ class SyncManager(
             val resp = repo.syncPullRequest(null) ?: return
             repo.applyPulled(resp)
             lastPullAt = resp.serverTime
-            // 2) Upload ALL local data (since=0) — important for upgrading old
-            //    users: their pre-login history/products get pushed to the server.
-            val allLocal = repo.collectChanges(0)
-            val nonEmpty = allLocal.profile != null || allLocal.norms != null ||
-                allLocal.entries.isNotEmpty() || allLocal.foodCache.isNotEmpty()
+            // 2) Push local data. On the FIRST login on this install we push everything
+            //    (since=0) once — to migrate legacy pre-account local data to the server.
+            //    On later logins we only push the delta, so we don't re-upload the whole
+            //    history (can be thousands of rows) on every sign-in.
+            val migrated = prefs.getBoolean(KEY_MIGRATED, false)
+            val pushSince = if (migrated) lastPushAt else 0L
+            val local = repo.collectChanges(pushSince)
+            val nonEmpty = local.profile != null || local.norms != null ||
+                local.entries.isNotEmpty() || local.foodCache.isNotEmpty()
             if (nonEmpty) {
-                val pushResp = repo.syncPushRequest(allLocal)
+                val pushResp = repo.syncPushRequest(local)
                 lastPushAt = pushResp?.serverTime ?: resp.serverTime
             } else {
                 lastPushAt = resp.serverTime
             }
+            prefs.edit { putBoolean(KEY_MIGRATED, true) }
         } catch (_: Exception) {
             // Silently — we'll enter the app with local data.
         } finally {
+            // Mark today's sync as done so the ON_RESUME dailySyncIfNeeded right after
+            // login doesn't fire a duplicate pull/push.
+            prefs.edit { putString(KEY_LAST_DAILY, LocalDate.now().toString()) }
             _isInitialSyncing.value = false
         }
     }
@@ -107,5 +115,6 @@ class SyncManager(
         private const val KEY_LAST_PUSH = "lastPushAt"
         private const val KEY_LAST_PULL = "lastPullAt"
         private const val KEY_LAST_DAILY = "lastDailySyncDay"
+        private const val KEY_MIGRATED = "initialMigrationDone"
     }
 }

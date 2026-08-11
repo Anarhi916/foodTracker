@@ -18,6 +18,13 @@ class AuthManager(
     private val _authState = MutableStateFlow(tokenStore.isSignedIn)
     val authState: StateFlow<Boolean> = _authState
 
+    // true while the Google auth code is being exchanged for a session on the backend.
+    // The Custom Tab covers the app during the browser phase; this covers the window AFTER
+    // the tab closes (redirect delivered) until authState flips — otherwise the login screen
+    // shows for the whole token-exchange round-trip.
+    private val _authInProgress = MutableStateFlow(false)
+    val authInProgress: StateFlow<Boolean> = _authInProgress
+
     // true → account deleted from another device; the UI shows a notification and resets.
     private val _accountDeletedNotice = MutableStateFlow(false)
     val accountDeletedNotice: StateFlow<Boolean> = _accountDeletedNotice
@@ -90,6 +97,7 @@ class AuthManager(
         // Google flow: we receive the auth code and exchange it via the backend (PKCE).
         if (scheme != googleRedirectScheme) return false
         val code = uri.getQueryParameter("code") ?: return false
+        _authInProgress.value = true
         return try {
             val verifier = pendingCodeVerifier ?: return false
             val resp = ApiClient.backendApi.authGoogleCode(GoogleCodeRequest(
@@ -109,6 +117,7 @@ class AuthManager(
         } finally {
             pendingNonce = null
             pendingCodeVerifier = null
+            _authInProgress.value = false
         }
     }
 

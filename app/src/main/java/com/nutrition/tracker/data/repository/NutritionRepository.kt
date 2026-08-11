@@ -2,6 +2,7 @@ package com.nutrition.tracker.data.repository
 
 import android.util.Base64
 import android.util.Log
+import androidx.room.withTransaction
 import com.google.gson.GsonBuilder
 import com.nutrition.tracker.BuildConfig
 import com.nutrition.tracker.data.api.*
@@ -464,6 +465,9 @@ class NutritionRepository(
 
     /** Apply data from the server (last-write-wins by updatedAt). */
     suspend fun applyPulled(resp: SyncPullResponse) {
+        // Single transaction: without it, each row is its own commit — dozens of
+        // synced rows on a slow disk turned this into a ~minute-long stall.
+        db.withTransaction {
         resp.profile?.let { dto ->
             val existing = db.userProfileDao().getProfileSync()
             if (existing == null || dto.updatedAt >= existing.updatedAt) {
@@ -512,6 +516,7 @@ class NutritionRepository(
                     updatedAt = dto.updatedAt, deletedAt = dto.deletedAt
                 ))
             }
+        }
         }
     }
 
