@@ -85,7 +85,20 @@ class SyncManager(
 
     private suspend fun sync(pushSince: Long) {
         if (!authManager.authState.value) return
-        // 1) PUSH
+        // 1) PULL first — must run BEFORE push. If we pushed first, the pull that
+        // immediately follows would return our OWN just-pushed rows (stamped with the
+        // latest server time), inflating lastPullAt to ~now and skipping over another
+        // device's older rows that were uploaded but not yet covered by our cursor —
+        // stranding them behind the cursor forever. pullOnLogin already pulls-then-pushes.
+        try {
+            val since = if (lastPullAt > 0) lastPullAt else null
+            val resp = repo.syncPullRequest(since)
+            if (resp != null) {
+                repo.applyPulled(resp)
+                lastPullAt = resp.serverTime
+            }
+        } catch (_: Exception) {}
+        // 2) PUSH
         try {
             val changes = repo.collectChanges(pushSince)
             val nonEmpty = changes.profile != null || changes.norms != null ||
@@ -93,15 +106,6 @@ class SyncManager(
             if (nonEmpty) {
                 val resp = repo.syncPushRequest(changes)
                 if (resp != null) lastPushAt = resp.serverTime
-            }
-        } catch (_: Exception) {}
-        // 2) PULL
-        try {
-            val since = if (lastPullAt > 0) lastPullAt else null
-            val resp = repo.syncPullRequest(since)
-            if (resp != null) {
-                repo.applyPulled(resp)
-                lastPullAt = resp.serverTime
             }
         } catch (_: Exception) {}
     }

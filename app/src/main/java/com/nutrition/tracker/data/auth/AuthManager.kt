@@ -40,7 +40,8 @@ class AuthManager(
     private val googleRedirectScheme = "com.googleusercontent.apps.${BuildConfig.GOOGLE_IOS_CLIENT_ID_SHORT}"
     private val googleRedirectUri = "$googleRedirectScheme:/oauth2redirect"
     // Backend origin without trailing slash, e.g. https://api.nutritiontracker.uk
-    private val BACKEND_ORIGIN = BuildConfig.BACKEND_BASE_URL.trimEnd('/')
+    // (or the SSH-tunnel origin on an emulator in debug — see BackendConfig).
+    private val BACKEND_ORIGIN = com.nutrition.tracker.data.api.BackendConfig.origin
 
     fun refreshAuthState() { _authState.value = tokenStore.isSignedIn }
 

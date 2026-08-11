@@ -88,7 +88,7 @@ object ApiClient {
             val body = gson.toJson(RefreshRequest(refresh))
             val client = OkHttpClient()
             val req = Request.Builder()
-                .url(BuildConfig.BACKEND_BASE_URL.trimEnd('/') + "/v1/auth/refresh")
+                .url(BackendConfig.origin + "/v1/auth/refresh")
                 .post(body.toRequestBody("application/json".toMediaType()))
                 .build()
             client.newCall(req).execute().use { resp ->
@@ -133,10 +133,11 @@ object ApiClient {
             .build()
     }
 
-    // Our backend proxy. Base URL from BuildConfig (dev: http://10.0.2.2:3000/).
+    // Our backend proxy. Base URL resolved at runtime (BackendConfig: prod, or the
+    // SSH-tunnel URL when running on an emulator in debug).
     val backendApi: BackendApiService by lazy {
         Retrofit.Builder()
-            .baseUrl(BuildConfig.BACKEND_BASE_URL)
+            .baseUrl(BackendConfig.baseUrl)
             .client(okHttpClient)
             .addConverterFactory(GsonConverterFactory.create(gson))
             .build()
