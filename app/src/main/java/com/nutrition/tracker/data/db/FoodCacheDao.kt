@@ -8,10 +8,10 @@ interface FoodCacheDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(entry: FoodCacheEntity)
 
-    @Query("SELECT * FROM food_cache WHERE keyNormalized = :key LIMIT 1")
+    @Query("SELECT * FROM food_cache WHERE keyNormalized = :key AND deletedAt IS NULL LIMIT 1")
     suspend fun findByNormalizedKey(key: String): FoodCacheEntity?
 
-    @Query("SELECT * FROM food_cache WHERE keyEnNormalized = :keyEnNormalized LIMIT 1")
+    @Query("SELECT * FROM food_cache WHERE keyEnNormalized = :keyEnNormalized AND deletedAt IS NULL LIMIT 1")
     suspend fun findByKeyEnNormalized(keyEnNormalized: String): FoodCacheEntity?
 
     @Query("SELECT * FROM food_cache ORDER BY keyOriginal ASC")
