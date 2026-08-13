@@ -707,16 +707,12 @@ fun AddCustomDishDialog(
 
                         val suggestions = remember(ing.name, cachedFoods) {
                             if (ing.name.length < 2 || ing.cachedFood != null) emptyList()
-                            else {
-                                val q = ing.name.lowercase()
-                                val qTranslit = transliterateToLatin(q)
-                                cachedFoods.filter {
-                                    it.keyOriginal.lowercase().contains(q) ||
-                                    it.keyEn.lowercase().contains(q) ||
-                                    it.keyOriginal.lowercase().contains(qTranslit) ||
-                                    it.keyEn.lowercase().contains(qTranslit)
-                                }.take(5)
-                            }
+                            else com.nutrition.tracker.util.rankFoodSuggestions(
+                                query = ing.name,
+                                items = cachedFoods,
+                                keyOriginal = { it.keyOriginal },
+                                keyEn = { it.keyEn },
+                            )
                         }
 
                         Column {

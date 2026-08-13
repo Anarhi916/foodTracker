@@ -443,15 +443,12 @@ private fun FoodInputSection(
     // Compute suggestions
     val suggestions = remember(foodInput, cachedFoods) {
         if (foodInput.length < 2) emptyList()
-        else {
-            val q = foodInput.lowercase()
-            val qTranslit = transliterateToLatin(q)
-            cachedFoods.filter {
-                it.keyOriginal.lowercase().contains(q) || it.keyEn.lowercase().contains(q)
-                        || it.keyOriginal.lowercase().contains(qTranslit)
-                        || it.keyEn.lowercase().contains(qTranslit)
-            }.take(5)
-        }
+        else com.nutrition.tracker.util.rankFoodSuggestions(
+            query = foodInput,
+            items = cachedFoods,
+            keyOriginal = { it.keyOriginal },
+            keyEn = { it.keyEn },
+        )
     }
 
     Card(
