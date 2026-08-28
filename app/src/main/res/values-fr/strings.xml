@@ -239,6 +239,7 @@
     <string name="add_to_saved">Ajouter aux enregistrés</string>
     <string name="clear_all">Tout effacer</string>
     <string name="clear">Effacer</string>
+    <string name="scan_barcode">Scanner le code-barres</string>
     <string name="add_ingredient">Ajouter un ingrédient</string>
     <string name="cache_empty_full">Le cache est vide.\nLes produits sont enregistrés automatiquement\nau premier ajout.</string>
     <string name="hint_food_example">Ex. : soupe 300 g, pain 50 g</string>

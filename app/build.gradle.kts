@@ -27,10 +27,10 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.nutrition.tracker"
+        applicationId = "uk.nutritiontracker.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
+        versionCode = 11
         versionName = "1.0"
 
         // Backend proxy: AI/USDA keys moved to the server (see backend/ARCHITECTURE.md).
@@ -71,6 +71,15 @@ android {
             "String",
             "OAUTH_REDIRECT_SCHEME",
             "\"${localProperties.getProperty("oauth.redirect.scheme", "com.nutrition.tracker")}\""
+        )
+        // Play Integrity: Google Cloud project number linked in the Play Console.
+        // Long literal (note the trailing L). 0 = not configured → attestation skipped
+        // (best-effort; a dev-mode backend still accepts X-Dev-Auth). Set the real number
+        // via play.integrity.cloud.project.number in local.properties before prod.
+        buildConfigField(
+            "long",
+            "PLAY_INTEGRITY_CLOUD_PROJECT_NUMBER",
+            "${localProperties.getProperty("play.integrity.cloud.project.number", "0")}L"
         )
 
         // Ship only the localizations we actually provide.
@@ -136,6 +145,9 @@ dependencies {
     // Auth: EncryptedSharedPreferences (токены) + Custom Tabs (web-OAuth)
     implementation(libs.androidx.security.crypto)
     implementation(libs.androidx.browser)
+
+    // Play Integrity (Android attestation — «подлинная ли это сборка/устройство»)
+    implementation(libs.play.integrity)
 
     // QR code generation
     implementation("com.google.zxing:core:3.5.3")

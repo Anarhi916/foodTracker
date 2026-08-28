@@ -23,6 +23,8 @@ import com.nutrition.tracker.data.auth.AuthManager
 // Apple/Google buttons — following the providers' brand guidelines.
 @Composable
 fun LoginScreen(authManager: AuthManager, context: Context) {
+    val inProgress by authManager.authInProgress.collectAsState()
+    val errorMessage by authManager.errorMessage.collectAsState()
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -51,6 +53,7 @@ fun LoginScreen(authManager: AuthManager, context: Context) {
         // ─── Sign in with Apple: black button, white logo + text ───
         Button(
             onClick = { authManager.launchApple(context) },
+            enabled = !inProgress,
             modifier = Modifier.fillMaxWidth().height(50.dp),
             shape = RoundedCornerShape(8.dp),
             contentPadding = PaddingValues(horizontal = 16.dp),
@@ -76,6 +79,7 @@ fun LoginScreen(authManager: AuthManager, context: Context) {
         // ─── Sign in with Google: white button, gray border, colored G ───
         Surface(
             onClick = { authManager.launchGoogle(context) },
+            enabled = !inProgress,
             modifier = Modifier.fillMaxWidth().height(50.dp),
             shape = RoundedCornerShape(8.dp),
             color = Color(0xFFFFFFFF),
@@ -99,6 +103,19 @@ fun LoginScreen(authManager: AuthManager, context: Context) {
                     fontWeight = FontWeight.Medium
                 )
             }
+        }
+
+        // Busy indicator (token exchange after the browser redirect) + error text.
+        Spacer(Modifier.height(20.dp))
+        if (inProgress) {
+            CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 3.dp)
+        } else if (errorMessage != null) {
+            Text(
+                errorMessage!!,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center
+            )
         }
     }
 }

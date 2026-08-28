@@ -31,8 +31,15 @@ class AuthManager(
 
     fun setAccountDeletedNotice(v: Boolean) { _accountDeletedNotice.value = v }
 
+    // Last sign-in error (shown on LoginScreen, parity with iOS). Null = no error.
+    private val _errorMessage = MutableStateFlow<String?>(null)
+    val errorMessage: StateFlow<String?> = _errorMessage
+
+    fun clearError() { _errorMessage.value = null }
+
     @Volatile private var pendingNonce: String? = null
     @Volatile private var pendingCodeVerifier: String? = null
+    @Volatile private var pendingState: String? = null
 
     // Apple redirects to our HTTPS server callback (custom schemes are not allowed by Apple).
     // Google uses the iOS reversed-client-ID scheme (public client — no secret needed for PKCE).
@@ -46,6 +53,7 @@ class AuthManager(
     fun refreshAuthState() { _authState.value = tokenStore.isSignedIn }
 
     fun launchGoogle(context: Context) {
+        _errorMessage.value = null
         val verifier = randomBase64Url(32)
         val challenge = sha256Base64url(verifier)
         pendingCodeVerifier = verifier
@@ -64,15 +72,19 @@ class AuthManager(
         // Apple does NOT allow custom-scheme redirects — the Return URL must be our HTTPS
         // server callback. The server exchanges the code, issues our session, and deep-links
         // back into the app at com.nutrition.tracker:/apple-auth with the tokens.
+        _errorMessage.value = null
         val nonce = randomNonce()
         pendingNonce = nonce
+        val state = randomBase64Url(24)
+        pendingState = state
         val url = Uri.parse("https://appleid.apple.com/auth/authorize").buildUpon()
             .appendQueryParameter("client_id", BuildConfig.APPLE_SERVICES_ID)
             .appendQueryParameter("redirect_uri", "$BACKEND_ORIGIN/v1/auth/apple/callback")
             .appendQueryParameter("response_type", "code")
-            .appendQueryParameter("scope", "email")
+            .appendQueryParameter("scope", "name email")
             .appendQueryParameter("response_mode", "form_post")
             .appendQueryParameter("nonce", nonce)
+            .appendQueryParameter("state", state)
             .build()
         openTab(context, url)
     }
@@ -84,15 +96,23 @@ class AuthManager(
     suspend fun handleRedirect(uri: Uri): Boolean {
         val scheme = uri.scheme ?: return false
 
-        // Apple flow: server already exchanged the code and deep-links back with tokens.
+        // Apple flow: server already exchanged the code and deep-links back with tokens
+        // in the URL FRAGMENT (not the query — keeps tokens out of logs/history).
         if (scheme == appleRedirectScheme && uri.path?.contains("apple-auth") == true) {
-            val access = uri.getQueryParameter("access")
-            val refresh = uri.getQueryParameter("refresh")
+            val expectedState = pendingState
+            pendingState = null
+            val frag = parseFragment(uri.fragment)
+            // CSRF: the state we generated must round-trip back unchanged.
+            // A null/mismatched state means a stale or unsolicited redirect — stay silent.
+            if (expectedState == null || frag["state"] != expectedState) return false
+            if (frag["error"] != null) { _errorMessage.value = "Не удалось войти через Apple"; return false }
+            val access = frag["access"]
+            val refresh = frag["refresh"]
             return if (!access.isNullOrBlank() && !refresh.isNullOrBlank()) {
                 tokenStore.save(access, refresh)
                 _authState.value = true
                 true
-            } else false
+            } else { _errorMessage.value = "Не удалось войти через Apple"; false }
         }
 
         // Google flow: we receive the auth code and exchange it via the backend (PKCE).
@@ -108,16 +128,19 @@ class AuthManager(
                 clientId = BuildConfig.GOOGLE_IOS_CLIENT_ID
             ))
             val tokens = resp.body()
-            if (resp.isSuccessful && tokens != null && tokens.accessToken.isNotBlank()) {
+            if (resp.isSuccessful && tokens != null &&
+                tokens.accessToken.isNotBlank() && tokens.refreshToken.isNotBlank()) {
                 tokenStore.save(tokens.accessToken, tokens.refreshToken)
                 _authState.value = true
                 true
-            } else false
+            } else { _errorMessage.value = "Не удалось войти через Google"; false }
         } catch (_: Exception) {
+            _errorMessage.value = "Не удалось войти через Google"
             false
         } finally {
             pendingNonce = null
             pendingCodeVerifier = null
+            pendingState = null
             _authInProgress.value = false
         }
     }
@@ -143,6 +166,16 @@ class AuthManager(
     private fun randomNonce(): String {
         val bytes = ByteArray(24); SecureRandom().nextBytes(bytes)
         return bytes.joinToString("") { "%02x".format(it) }
+    }
+
+    // Parse a URL fragment ("a=1&b=2") into a map, URL-decoding each value.
+    private fun parseFragment(fragment: String?): Map<String, String> {
+        if (fragment.isNullOrBlank()) return emptyMap()
+        return fragment.split("&").mapNotNull { part ->
+            val i = part.indexOf('=')
+            if (i <= 0) null
+            else Uri.decode(part.substring(0, i)) to Uri.decode(part.substring(i + 1))
+        }.toMap()
     }
 
     private fun randomBase64Url(byteLen: Int): String {

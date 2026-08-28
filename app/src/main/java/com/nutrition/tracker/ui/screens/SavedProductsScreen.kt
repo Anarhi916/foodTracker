@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.QrCode
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
@@ -33,7 +34,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.launch
 import com.nutrition.tracker.R
 import com.nutrition.tracker.data.db.FoodCacheEntity
 import com.nutrition.tracker.data.model.NutrientData
@@ -61,6 +64,11 @@ fun SavedProductsScreen(
     var showAddDialog by remember { mutableStateOf(false) }
     var showAddTypeChooser by remember { mutableStateOf(false) }
     var showAddDishDialog by remember { mutableStateOf(false) }
+    var dishDialogName by remember { mutableStateOf("") }
+    var dishDialogIngredients by remember { mutableStateOf(listOf(IngredientInput())) }
+    var scanningDishIngredientIdx by remember { mutableStateOf<Int?>(null) }
+    var dishScanResult by remember { mutableStateOf<Pair<Int, Pair<String, FoodCacheEntity?>>?>(null) }
+    val scope = rememberCoroutineScope()
     var quickAddEntry by remember { mutableStateOf<FoodCacheEntity?>(null) }
     var quickAddWeight by remember { mutableStateOf("100") }
     var searchQuery by remember { mutableStateOf("") }
@@ -388,11 +396,22 @@ fun SavedProductsScreen(
     }
 
 // Custom dish dialog (from ingredients)
-    if (showAddDishDialog) {
+    if (showAddDishDialog && scanningDishIngredientIdx == null) {
         AddCustomDishDialog(
             viewModel = viewModel,
             cachedFoods = cachedFoods,
-            onDismiss = { showAddDishDialog = false }
+            dishName = dishDialogName,
+            onDishNameChange = { dishDialogName = it },
+            ingredients = dishDialogIngredients,
+            onIngredientsChange = { dishDialogIngredients = it },
+            onDismiss = {
+                showAddDishDialog = false
+                dishDialogName = ""
+                dishDialogIngredients = listOf(IngredientInput())
+            },
+            onScanRequest = { idx -> scanningDishIngredientIdx = idx },
+            scannedIngredient = dishScanResult,
+            onScannedIngredientConsumed = { dishScanResult = null }
         )
     }
 
@@ -457,6 +476,7 @@ fun SavedProductsScreen(
         )
     }
 
+    Box(modifier = Modifier.fillMaxSize()) {
     Scaffold(
         topBar = {
             TopAppBar(
@@ -634,6 +654,21 @@ fun SavedProductsScreen(
         }
         } // Box
     }
+
+    if (scanningDishIngredientIdx != null) {
+        val pendingIdx = scanningDishIngredientIdx!!
+        BarcodeScannerScreen(
+            onBarcodeScanned = { barcode ->
+                scanningDishIngredientIdx = null
+                scope.launch {
+                    val result = viewModel.lookupBarcodeForIngredient(barcode)
+                    if (result != null) dishScanResult = Pair(pendingIdx, result)
+                }
+            },
+            onBack = { scanningDishIngredientIdx = null }
+        )
+    }
+    } // outer Box
 }
 
 // Round colored icon button (like on iOS: filled circle + icon inside).
@@ -657,7 +692,7 @@ private fun RoundActionButton(
     }
 }
 
-private data class IngredientInput(
+data class IngredientInput(
     val id: Long = System.nanoTime(),
     val name: String = "",
     val weight: String = "",
@@ -669,12 +704,31 @@ private data class IngredientInput(
 fun AddCustomDishDialog(
     viewModel: MainViewModel,
     cachedFoods: List<FoodCacheEntity>,
-    onDismiss: () -> Unit
+    dishName: String,
+    onDishNameChange: (String) -> Unit,
+    ingredients: List<IngredientInput>,
+    onIngredientsChange: (List<IngredientInput>) -> Unit,
+    onDismiss: () -> Unit,
+    onScanRequest: (Int) -> Unit = {},
+    scannedIngredient: Pair<Int, Pair<String, FoodCacheEntity?>>? = null,
+    onScannedIngredientConsumed: () -> Unit = {}
 ) {
-    var dishName by remember { mutableStateOf("") }
-    var ingredients by remember { mutableStateOf(listOf(IngredientInput())) }
     var isProcessing by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(scannedIngredient) {
+        scannedIngredient?.let { (idx, result) ->
+            val (name, entity) = result
+            if (idx == -1) {
+                onIngredientsChange(ingredients + IngredientInput(name = name, cachedFood = entity))
+            } else if (idx < ingredients.size) {
+                onIngredientsChange(ingredients.toMutableList().also {
+                    it[idx] = it[idx].copy(name = name, cachedFood = entity)
+                })
+            }
+            onScannedIngredientConsumed()
+        }
+    }
 
     val canSave = dishName.isNotBlank() && ingredients.any {
         it.name.isNotBlank() && (it.weight.replace(",", ".").toDoubleOrNull() ?: 0.0) > 0
@@ -687,7 +741,7 @@ fun AddCustomDishDialog(
             Column(modifier = Modifier.heightIn(max = 500.dp)) {
                 OutlinedTextField(
                     value = dishName,
-                    onValueChange = { dishName = it },
+                    onValueChange = { onDishNameChange(it) },
                     label = { Text(stringResource(R.string.dish_name_required)) },
                     modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                     maxLines = 3
@@ -703,7 +757,6 @@ fun AddCustomDishDialog(
                 ) {
                     items(ingredients.size) { idx ->
                         val ing = ingredients[idx]
-                        val isLast = idx == ingredients.lastIndex
 
                         val suggestions = remember(ing.name, cachedFoods) {
                             if (ing.name.length < 2 || ing.cachedFood != null) emptyList()
@@ -720,9 +773,9 @@ fun AddCustomDishDialog(
                                 OutlinedTextField(
                                     value = ing.name,
                                     onValueChange = { newName ->
-                                        ingredients = ingredients.toMutableList().also {
+                                        onIngredientsChange(ingredients.toMutableList().also {
                                             it[idx] = it[idx].copy(name = newName, cachedFood = null)
-                                        }
+                                        })
                                     },
                                     label = {
                                         Text(if (ing.cachedFood != null) stringResource(R.string.from_cache) else stringResource(R.string.ingredient))
@@ -740,9 +793,9 @@ fun AddCustomDishDialog(
                                 OutlinedTextField(
                                     value = ing.weight,
                                     onValueChange = { newW ->
-                                        ingredients = ingredients.toMutableList().also {
+                                        onIngredientsChange(ingredients.toMutableList().also {
                                             it[idx] = it[idx].copy(weight = newW)
-                                        }
+                                        })
                                     },
                                     label = { Text(stringResource(R.string.gram_short)) },
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -750,22 +803,10 @@ fun AddCustomDishDialog(
                                     modifier = Modifier.width(80.dp)
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
-                                if (isLast) {
-                                    IconButton(
-                                        onClick = { ingredients = ingredients + IngredientInput() },
-                                        enabled = !isProcessing
-                                    ) {
-                                        Icon(
-                                            Icons.Default.Add,
-                                            contentDescription = stringResource(R.string.add_ingredient),
-                                            tint = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-                                } else {
+                                if (ingredients.size > 1) {
                                     IconButton(
                                         onClick = {
-                                            ingredients = ingredients.filterIndexed { i, _ -> i != idx }
-                                                .ifEmpty { listOf(IngredientInput()) }
+                                            onIngredientsChange(ingredients.filterIndexed { i, _ -> i != idx })
                                         },
                                         enabled = !isProcessing
                                     ) {
@@ -793,12 +834,12 @@ fun AddCustomDishDialog(
                                             } catch (_: Exception) { NutrientData() }
                                             Surface(
                                                 onClick = {
-                                                    ingredients = ingredients.toMutableList().also {
+                                                    onIngredientsChange(ingredients.toMutableList().also {
                                                         it[idx] = it[idx].copy(
                                                             name = entry.keyOriginal,
                                                             cachedFood = entry
                                                         )
-                                                    }
+                                                    })
                                                 },
                                                 modifier = Modifier.fillMaxWidth()
                                             ) {
@@ -834,6 +875,23 @@ fun AddCustomDishDialog(
                             }
                         }
                     }
+                }
+
+                TextButton(
+                    onClick = { onIngredientsChange(ingredients + IngredientInput()) },
+                    enabled = !isProcessing
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(stringResource(R.string.add_ingredient))
+                }
+                TextButton(
+                    onClick = { onScanRequest(-1) },
+                    enabled = !isProcessing
+                ) {
+                    Icon(Icons.Default.QrCodeScanner, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(stringResource(R.string.scan_barcode))
                 }
 
                 if (errorMessage != null) {

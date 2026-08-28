@@ -239,6 +239,7 @@
     <string name="add_to_saved">Añadir a guardados</string>
     <string name="clear_all">Borrar todo</string>
     <string name="clear">Borrar</string>
+    <string name="scan_barcode">Escanear código de barras</string>
     <string name="add_ingredient">Añadir ingrediente</string>
     <string name="cache_empty_full">La caché está vacía.\nLos productos se guardan automáticamente\nal añadirlos por primera vez.</string>
     <string name="hint_food_example">Ej.: sopa 300 g, pan 50 g</string>

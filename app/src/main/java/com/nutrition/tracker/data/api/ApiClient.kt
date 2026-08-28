@@ -3,6 +3,7 @@ package com.nutrition.tracker.data.api
 import com.google.gson.GsonBuilder
 import com.nutrition.tracker.BuildConfig
 import com.nutrition.tracker.data.auth.TokenStore
+import com.nutrition.tracker.data.auth.IntegrityService
 import okhttp3.Authenticator
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
@@ -58,12 +59,38 @@ object ApiClient {
         chain.proceed(req)
     }
 
+    // Play Integrity headers on every protected backend request (not /v1/auth/*). Best-effort:
+    // adds nothing on the emulator / when Play Integrity is unconfigured, so the request rides
+    // on X-Dev-Auth (dev-mode backend only). Runs on OkHttp's thread → the blocking token
+    // request is fine here.
+    private val integrityInterceptor = Interceptor { chain ->
+        val original = chain.request()
+        val req = if (isAuthPath(original)) original else original.newBuilder().addIntegrity().build()
+        chain.proceed(req)
+    }
+
+    // Attach fresh integrity headers (single-use token). Called on the first attempt AND on the
+    // 401 retry: the first attempt already consumes the token server-side, so a replay on retry
+    // would be rejected — the retry needs a brand-new token.
+    private fun Request.Builder.addIntegrity(): Request.Builder = apply {
+        IntegrityService.requestHeaders()?.forEach { (name, value) -> header(name, value) }
+    }
+
     // On 401 — refresh the session once with the refresh token and retry the request.
     private val refreshAuthenticator = Authenticator { _: Route?, response: Response ->
         val store = tokenStore ?: return@Authenticator null
         if (isAuthPath(response.request)) return@Authenticator null      // don't refresh the auth requests themselves
-        if (responseCount(response) >= 2) return@Authenticator null      // already tried
-        val refresh = store.refreshToken ?: return@Authenticator null
+        if (responseCount(response) >= 2) {
+            // We already retried once with a freshly refreshed token and STILL got 401 →
+            // the session is invalid server-side. Stop retrying and sign the user out.
+            onSessionExpired?.invoke()
+            return@Authenticator null
+        }
+        val refresh = store.refreshToken ?: run {
+            // No refresh token but the server rejects us → dead session, sign out.
+            onSessionExpired?.invoke()
+            return@Authenticator null
+        }
 
         val newAccess = synchronized(this) {
             // Another thread may have already refreshed — check whether access changed.
@@ -79,7 +106,10 @@ object ApiClient {
             return@Authenticator null
         }
 
-        response.request.newBuilder().header("Authorization", "Bearer $newAccess").build()
+        response.request.newBuilder()
+            .header("Authorization", "Bearer $newAccess")
+            .addIntegrity()
+            .build()
     }
 
     // Synchronous refresh via a separate minimal client (no interceptors).
@@ -94,7 +124,9 @@ object ApiClient {
             client.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) return null
                 val tokens = gson.fromJson(resp.body?.string(), TokenResponse::class.java)
-                if (tokens.accessToken.isBlank()) return null
+                // Never clobber a good refresh token with a blank one — that would brick
+                // all future refreshes and force a re-login.
+                if (tokens.accessToken.isBlank() || tokens.refreshToken.isBlank()) return null
                 store.save(tokens.accessToken, tokens.refreshToken)
                 tokens.accessToken
             }
@@ -119,6 +151,7 @@ object ApiClient {
             .readTimeout(120, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)
             .addInterceptor(authInterceptor)
+            .addInterceptor(integrityInterceptor)
             .addInterceptor(accountDeletedInterceptor)
             .authenticator(refreshAuthenticator)
             .apply {

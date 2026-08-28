@@ -239,6 +239,7 @@
     <string name="add_to_saved">Aggiungi ai salvati</string>
     <string name="clear_all">Cancella tutto</string>
     <string name="clear">Cancella</string>
+    <string name="scan_barcode">Scansiona il codice a barre</string>
     <string name="add_ingredient">Aggiungi ingrediente</string>
     <string name="cache_empty_full">La cache è vuota.\nI prodotti vengono salvati automaticamente\nal primo inserimento.</string>
     <string name="hint_food_example">Es.: zuppa 300 g, pane 50 g</string>

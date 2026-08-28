@@ -18,6 +18,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.nutrition.tracker.R
 import com.nutrition.tracker.data.model.NutrientData
+import com.nutrition.tracker.ui.theme.ProgressGreen
+import com.nutrition.tracker.ui.theme.ProgressOrange
+import com.nutrition.tracker.ui.theme.ProgressRed
+import com.nutrition.tracker.ui.theme.ProgressYellow
 import com.nutrition.tracker.viewmodel.MainViewModel
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -284,7 +288,8 @@ fun StatisticsScreen(
                     NutrientStatCard(
                         title = stringResource(R.string.macros_and_calories),
                         items = t.macrosList(),
-                        normItems = normForPeriod?.macrosList()
+                        normItems = normForPeriod?.macrosList(),
+                        upperRatios = listOf(1.15, 1.8, 1.3, 1.3, 3.0)
                     )
                 }
 
@@ -293,7 +298,8 @@ fun StatisticsScreen(
                     NutrientStatCard(
                         title = stringResource(R.string.vitamins),
                         items = t.vitaminsList(),
-                        normItems = normForPeriod?.vitaminsList()
+                        normItems = normForPeriod?.vitaminsList(),
+                        upperRatios = listOf(1.3, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.5, 1.3, 1.5, 1.5)
                     )
                 }
 
@@ -302,7 +308,8 @@ fun StatisticsScreen(
                     NutrientStatCard(
                         title = stringResource(R.string.minerals_and_trace_elements),
                         items = t.mineralsList(),
-                        normItems = normForPeriod?.mineralsList()
+                        normItems = normForPeriod?.mineralsList(),
+                        upperRatios = listOf(1.5, 1.3, 1.5, 1.5, 1.5, 1.2, 1.5, 1.3, 1.5, 1.3, 1.3)
                     )
                 }
 
@@ -311,7 +318,8 @@ fun StatisticsScreen(
                     NutrientStatCard(
                         title = stringResource(R.string.fats_details_3),
                         items = t.fatDetailsList(),
-                        normItems = normForPeriod?.fatDetailsList()
+                        normItems = normForPeriod?.fatDetailsList(),
+                        upperRatios = listOf(1.0, 3.0, 3.0, 1.3)
                     )
                 }
             }
@@ -325,7 +333,8 @@ fun StatisticsScreen(
 private fun NutrientStatCard(
     title: String,
     items: List<Pair<Int, Double>>,
-    normItems: List<Pair<Int, Double>>?
+    normItems: List<Pair<Int, Double>>?,
+    upperRatios: List<Double>? = null
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -372,12 +381,16 @@ private fun NutrientStatCard(
 
             items.forEachIndexed { index, (nameRes, value) ->
                 val normValue = normItems?.getOrNull(index)?.second
-                val pct = if (normValue != null && normValue > 0) (value / normValue * 100).toInt() else null
+                val ratio = if (normValue != null && normValue > 0) value / normValue else null
+                val pct = ratio?.let { (it * 100).toInt() }
+                val upperRatio = upperRatios?.getOrNull(index) ?: 1.5
                 val pctColor = when {
                     pct == null -> MaterialTheme.colorScheme.onSurface
-                    pct >= 90 -> MaterialTheme.colorScheme.primary
-                    pct >= 50 -> MaterialTheme.colorScheme.onSurface
-                    else -> MaterialTheme.colorScheme.error
+                    ratio!! > upperRatio * 1.3 -> ProgressRed
+                    ratio > upperRatio -> ProgressOrange
+                    ratio >= 0.8 -> ProgressGreen
+                    ratio >= 0.4 -> ProgressYellow
+                    else -> ProgressRed
                 }
                 val name = stringResource(nameRes)
 

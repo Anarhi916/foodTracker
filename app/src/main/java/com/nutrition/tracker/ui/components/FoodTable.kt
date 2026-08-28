@@ -151,15 +151,6 @@ fun FoodEntriesTable(
                         modifier = Modifier.weight(2.5f),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        if (entry.fromCache) {
-                            Box(
-                                modifier = Modifier
-                                    .size(8.dp)
-                                    .clip(CircleShape)
-                                    .background(ProgressOrange)
-                            )
-                            Spacer(Modifier.width(4.dp))
-                        }
                         Text(
                             entry.foodName,
                             style = MaterialTheme.typography.bodySmall,

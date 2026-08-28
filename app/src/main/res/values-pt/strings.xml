@@ -239,6 +239,7 @@
     <string name="add_to_saved">Adicionar aos salvos</string>
     <string name="clear_all">Limpar tudo</string>
     <string name="clear">Limpar</string>
+    <string name="scan_barcode">Escanear código de barras</string>
     <string name="add_ingredient">Adicionar ingrediente</string>
     <string name="cache_empty_full">O cache está vazio.\nOs produtos são salvos automaticamente\nno primeiro acréscimo.</string>
     <string name="hint_food_example">Ex.: sopa 300 g, pão 50 g</string>

@@ -275,6 +275,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.value = _uiState.value.copy(barcodeWeight = weight)
     }
 
+    suspend fun lookupBarcodeForIngredient(barcode: String): Pair<String, com.nutrition.tracker.data.db.FoodCacheEntity?>? {
+        return try { repo.lookupBarcodeForIngredient(barcode) } catch (e: Exception) { null }
+    }
+
     fun confirmBarcodeAdd() {
         val state = _uiState.value
         val name = state.barcodeProductName ?: return

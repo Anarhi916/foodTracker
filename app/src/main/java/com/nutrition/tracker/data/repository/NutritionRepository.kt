@@ -184,10 +184,6 @@ class NutritionRepository(
         val normalizedEn = normalizeKey(keyEn)
         val existingByKey = db.foodCacheDao().findByNormalizedKey(normalized)
         if (existingByKey != null) return
-        if (!keyOriginal.startsWith("barcode:")) {
-            val existingByEn = db.foodCacheDao().findByKeyEnNormalized(normalizedEn)
-            if (existingByEn != null) return
-        }
         db.foodCacheDao().insert(
             FoodCacheEntity(
                 keyOriginal = keyOriginal,
@@ -345,6 +341,13 @@ class NutritionRepository(
         }
 
         return Triple(name, enrichedPer100g, false)
+    }
+
+    suspend fun lookupBarcodeForIngredient(barcode: String): Pair<String, FoodCacheEntity?>? {
+        val result = lookupBarcodeWithCache(barcode) ?: return null
+        val name = result.first
+        val entity = findInCache(name)?.first ?: findInCache("barcode:$barcode")?.first
+        return Pair(name, entity)
     }
 
     // OFF barcode lookup (stays on the client). Mapping OFF → NutrientData (per 100g).

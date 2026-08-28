@@ -443,12 +443,15 @@ private fun FoodInputSection(
     // Compute suggestions
     val suggestions = remember(foodInput, cachedFoods) {
         if (foodInput.length < 2) emptyList()
-        else com.nutrition.tracker.util.rankFoodSuggestions(
-            query = foodInput,
-            items = cachedFoods,
-            keyOriginal = { it.keyOriginal },
-            keyEn = { it.keyEn },
-        )
+        else {
+            val query = com.nutrition.tracker.util.WeightParser.parse(foodInput).first.trim()
+            com.nutrition.tracker.util.rankFoodSuggestions(
+                query = query.ifEmpty { foodInput },
+                items = cachedFoods,
+                keyOriginal = { it.keyOriginal },
+                keyEn = { it.keyEn },
+            )
+        }
     }
 
     Card(

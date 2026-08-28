@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Legacy full-backup rules (Android 11 / API ≤ 30). -->
+<full-backup-content>
+    <!-- EncryptedSharedPreferences keeps its master key in the AndroidKeyStore, which is
+         NOT part of a backup. Backing up the encrypted token file without its key makes it
+         undecryptable on restore → crash on first access. Exclude it from backups. -->
+    <exclude domain="sharedpref" path="nt_auth_tokens.xml" />
+</full-backup-content>

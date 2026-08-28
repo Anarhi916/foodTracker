@@ -239,6 +239,7 @@
     <string name="add_to_saved">Додати до збережених</string>
     <string name="clear_all">Очистити все</string>
     <string name="clear">Очистити</string>
+    <string name="scan_barcode">Сканувати штрихкод</string>
     <string name="add_ingredient">Додати інгредієнт</string>
     <string name="cache_empty_full">Кеш порожній.\nПродукти зберігаються автоматично\nпри першому додаванні.</string>
     <string name="hint_food_example">Наприклад: борщ 300 г, хліб 50 г</string>

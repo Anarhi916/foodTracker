@@ -239,6 +239,7 @@
     <string name="add_to_saved">Zu gespeicherten hinzufügen</string>
     <string name="clear_all">Alles löschen</string>
     <string name="clear">Löschen</string>
+    <string name="scan_barcode">Barcode scannen</string>
     <string name="add_ingredient">Zutat hinzufügen</string>
     <string name="cache_empty_full">Cache ist leer.\nProdukte werden beim ersten Hinzufügen\nautomatisch gespeichert.</string>
     <string name="hint_food_example">Z. B.: Suppe 300 g, Brot 50 g</string>

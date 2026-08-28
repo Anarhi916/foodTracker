@@ -1,8 +1,10 @@
 package com.nutrition.tracker
 
 import android.app.Application
+import android.provider.Settings
 import com.nutrition.tracker.data.api.ApiClient
 import com.nutrition.tracker.data.auth.AuthManager
+import com.nutrition.tracker.data.auth.IntegrityService
 import com.nutrition.tracker.data.auth.TokenStore
 import com.nutrition.tracker.data.db.AppDatabase
 import com.nutrition.tracker.data.repository.NutritionRepository
@@ -30,11 +32,23 @@ class NutritionApp : Application() {
         tokenStore = TokenStore(this)
         authManager = AuthManager(tokenStore)
         syncManager = SyncManager(this, repository, authManager)
-        // Bearer injection + refresh-on-401. onExpired → reset auth state.
+
+        // Play Integrity: cloud project number from BuildConfig (0 = unconfigured → skipped).
+        // ANDROID_ID is a stable per-device/app id used only for server-side rate-limiting
+        // (Play Integrity intentionally exposes no device identifier).
+        @Suppress("HardwareIds")
+        val deviceId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID)
+            ?: "unknown"
+        IntegrityService.init(this, BuildConfig.PLAY_INTEGRITY_CLOUD_PROJECT_NUMBER, deviceId)
+        // Bearer injection + refresh-on-401. onExpired → session invalid: drop tokens
+        // and return to Login (don't wipe local data — same user usually re-logs in).
         // onDeleted → account deleted from another device: wipe local data + logout.
         ApiClient.init(
             tokenStore,
-            onExpired = { authManager.refreshAuthState() },
+            onExpired = {
+                tokenStore.clear()
+                authManager.refreshAuthState()
+            },
             onDeleted = {
                 appScope.launch {
                     repository.wipeAllLocalData()

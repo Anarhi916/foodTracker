@@ -239,6 +239,7 @@
     <string name="add_to_saved">Add to saved</string>
     <string name="clear_all">Clear all</string>
     <string name="clear">Clear</string>
+    <string name="scan_barcode">Scan barcode</string>
     <string name="add_ingredient">Add ingredient</string>
     <string name="cache_empty_full">Cache is empty.\nProducts are saved automatically\non first add.</string>
     <string name="hint_food_example">E.g.: soup 300g, bread 50g</string>
