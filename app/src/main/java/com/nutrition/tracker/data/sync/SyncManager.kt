@@ -68,13 +68,13 @@ class SyncManager(
         if (!authManager.authState.value) return
         val today = LocalDate.now().toString()
         if (prefs.getString(KEY_LAST_DAILY, null) == today) return
-        backgroundSync()
-        prefs.edit { putString(KEY_LAST_DAILY, today) }
+        val synced = backgroundSync()
+        if (synced) prefs.edit { putString(KEY_LAST_DAILY, today) }
     }
 
-    /** Push the delta, then pull the delta. Silently. */
-    suspend fun backgroundSync() {
-        sync(pushSince = lastPushAt)
+    /** Push the delta, then pull the delta. Silently. Returns true if at least one succeeded. */
+    suspend fun backgroundSync(): Boolean {
+        return sync(pushSince = lastPushAt)
     }
 
     /** Forced full sync (button in the profile): push EVERYTHING (since=0),
@@ -83,8 +83,9 @@ class SyncManager(
         sync(pushSince = 0)
     }
 
-    private suspend fun sync(pushSince: Long) {
-        if (!authManager.authState.value) return
+    private suspend fun sync(pushSince: Long): Boolean {
+        if (!authManager.authState.value) return false
+        var ok = false
         // 1) PULL first — must run BEFORE push. If we pushed first, the pull that
         // immediately follows would return our OWN just-pushed rows (stamped with the
         // latest server time), inflating lastPullAt to ~now and skipping over another
@@ -96,6 +97,7 @@ class SyncManager(
             if (resp != null) {
                 repo.applyPulled(resp)
                 lastPullAt = resp.serverTime
+                ok = true
             }
         } catch (_: Exception) {}
         // 2) PUSH
@@ -105,9 +107,10 @@ class SyncManager(
                 changes.entries.isNotEmpty() || changes.foodCache.isNotEmpty()
             if (nonEmpty) {
                 val resp = repo.syncPushRequest(changes)
-                if (resp != null) lastPushAt = resp.serverTime
+                if (resp != null) { lastPushAt = resp.serverTime; ok = true }
             }
         } catch (_: Exception) {}
+        return ok
     }
 
     /** Reset markers on sign-out — a new user syncs from scratch. */

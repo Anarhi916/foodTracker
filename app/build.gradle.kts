@@ -15,7 +15,7 @@ if (localPropertiesFile.exists()) {
 
 android {
     namespace = "com.nutrition.tracker"
-    compileSdk = 35
+    compileSdk = 36
 
     signingConfigs {
         create("release") {
@@ -29,8 +29,8 @@ android {
     defaultConfig {
         applicationId = "uk.nutritiontracker.app"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 11
+        targetSdk = 36
+        versionCode = 15
         versionName = "1.0"
 
         // Backend proxy: AI/USDA keys moved to the server (see backend/ARCHITECTURE.md).

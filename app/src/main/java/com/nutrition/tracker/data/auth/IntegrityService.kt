@@ -12,6 +12,7 @@ import com.google.android.play.core.integrity.StandardIntegrityManager.StandardI
 import com.google.android.play.core.integrity.StandardIntegrityManager.StandardIntegrityTokenRequest
 import java.security.MessageDigest
 import java.security.SecureRandom
+import java.util.concurrent.TimeUnit
 
 /**
  * Google Play Integrity (Android attestation), mirroring backend/src/services/playIntegrity.js.
@@ -34,6 +35,10 @@ object IntegrityService {
     // The warm-up provider is expensive to create; cache it and rebuild only if it goes stale.
     @Volatile private var tokenProvider: StandardIntegrityTokenProvider? = null
     private val prepareLock = Any()
+    // Circuit breaker: skip prepareIntegrityToken for 60s after a failure to prevent
+    // repeated system dialogs when multiple requests fire concurrently on app open.
+    @Volatile private var lastProviderFailureMs = 0L
+    private const val PROVIDER_FAILURE_COOLDOWN_MS = 60_000L
 
     fun init(context: Context, cloudProjectNumber: Long, deviceId: String) {
         appContext = context.applicationContext
@@ -67,14 +72,19 @@ object IntegrityService {
             }
         } catch (e: Exception) {
             tokenProvider = null
+            lastProviderFailureMs = System.currentTimeMillis()
             null
         }
     }
 
     private fun provider(): StandardIntegrityTokenProvider? {
         tokenProvider?.let { return it }
+        // Circuit breaker: if prepareIntegrityToken failed recently, skip to avoid
+        // triggering the Play Integrity system dialog on every queued request.
+        if (System.currentTimeMillis() - lastProviderFailureMs < PROVIDER_FAILURE_COOLDOWN_MS) return null
         synchronized(prepareLock) {
             tokenProvider?.let { return it }
+            if (System.currentTimeMillis() - lastProviderFailureMs < PROVIDER_FAILURE_COOLDOWN_MS) return null
             val ctx = appContext ?: return null
             if (cloudProjectNumber == 0L) return null
             // Suppress the Play Services "Something went wrong" system dialog: if Play Services
@@ -89,11 +99,13 @@ object IntegrityService {
                         PrepareIntegrityTokenRequest.builder()
                             .setCloudProjectNumber(cloudProjectNumber)
                             .build()
-                    )
+                    ),
+                    15, TimeUnit.SECONDS
                 )
                 tokenProvider = prepared
                 prepared
             } catch (e: Exception) {
+                lastProviderFailureMs = System.currentTimeMillis()
                 null
             }
         }

@@ -18,6 +18,7 @@ data class MainUiState(
     val isLoading: Boolean = false,
     val error: String? = null,
     val pendingFood: FoodAnalysisResult? = null,
+    val pendingFoodOriginalInput: String = "",
     val pendingFoodWeight: Double = 0.0,
     val pendingFoodSource: String = "manual",
     val showConfirmDialog: Boolean = false,
@@ -126,6 +127,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
                         pendingFood = result,
+                        pendingFoodOriginalInput = input,
                         pendingFoodWeight = if (result.weightGrams > 0) result.weightGrams else extractWeight(input),
                         pendingFoodSource = "manual",
                         showConfirmDialog = true
@@ -169,7 +171,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             repo.addFoodEntry(
-                foodName = food.foodName,
+                foodName = state.pendingFoodOriginalInput.ifBlank { food.foodName },
                 weightGrams = newWeight,
                 nutrients = nutrients,
                 source = state.pendingFoodSource,
@@ -178,13 +180,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.value = _uiState.value.copy(
                 showConfirmDialog = false,
                 pendingFood = null,
+                pendingFoodOriginalInput = "",
                 foodInput = ""
             )
         }
     }
 
     fun dismissConfirmDialog() {
-        _uiState.value = _uiState.value.copy(showConfirmDialog = false, pendingFood = null)
+        _uiState.value = _uiState.value.copy(showConfirmDialog = false, pendingFood = null, pendingFoodOriginalInput = "")
     }
 
     fun deleteEntry(entry: FoodEntryEntity) {

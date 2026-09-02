@@ -350,13 +350,22 @@ class NutritionRepository(
         return Pair(name, entity)
     }
 
+    // Rejects vandalized/garbage OFF product names. Real food names are short and don't contain "!".
+    private fun sanitizeOFFName(raw: String?): String? {
+        if (raw.isNullOrBlank()) return null
+        val t = raw.trim()
+        if (t.length > 80 || t.contains('!')) return null
+        return t
+    }
+
     // OFF barcode lookup (stays on the client). Mapping OFF → NutrientData (per 100g).
     private suspend fun lookupBarcode(barcode: String): Pair<String, NutrientData>? {
         return try {
             val response = offApi.getProduct(barcode)
             val product = response.product ?: return null
             val name = listOf(product.productNameRu, product.productNameUk, product.productNameEn, product.productName, product.brands)
-                .firstOrNull { !it.isNullOrBlank() } ?: "Неизвестный продукт"
+                .mapNotNull { sanitizeOFFName(it) }
+                .firstOrNull() ?: return null
             val n = product.nutriments ?: return Pair(name, NutrientData())
             val per100g = NutrientData(
                 calories = n.energyKcal100g ?: 0.0,

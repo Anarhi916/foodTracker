@@ -6,6 +6,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -343,12 +345,15 @@ fun SavedProductsScreen(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
                     )
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        items(fields.size) { i ->
+                    Column(
+                        modifier = Modifier.verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        fields.forEachIndexed { i, field ->
                             OutlinedTextField(
                                 value = texts[i].value,
                                 onValueChange = { texts[i].value = it },
-                                label = { Text("${stringResource(fields[i].label)} (${stringResource(fields[i].unit)})") },
+                                label = { Text("${stringResource(field.label)} (${stringResource(field.unit)})") },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
@@ -441,12 +446,15 @@ fun SavedProductsScreen(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
                     )
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        items(fields.size) { i ->
+                    Column(
+                        modifier = Modifier.verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        fields.forEachIndexed { i, field ->
                             OutlinedTextField(
                                 value = addTexts[i].value,
                                 onValueChange = { addTexts[i].value = it },
-                                label = { Text("${stringResource(fields[i].label)} (${stringResource(fields[i].unit)})") },
+                                label = { Text("${stringResource(field.label)} (${stringResource(field.unit)})") },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
@@ -751,12 +759,12 @@ fun AddCustomDishDialog(
                     style = MaterialTheme.typography.labelMedium,
                     modifier = Modifier.padding(vertical = 4.dp)
                 )
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.weight(1f, fill = false)
+                Box(modifier = Modifier.weight(1f, fill = false)) {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    items(ingredients.size) { idx ->
-                        val ing = ingredients[idx]
+                    ingredients.forEachIndexed { idx, ing ->
 
                         val suggestions = remember(ing.name, cachedFoods) {
                             if (ing.name.length < 2 || ing.cachedFood != null) emptyList()
@@ -875,6 +883,7 @@ fun AddCustomDishDialog(
                             }
                         }
                     }
+                }
                 }
 
                 TextButton(
