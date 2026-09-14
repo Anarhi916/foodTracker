@@ -1,10 +1,12 @@
 package com.nutrition.tracker.data.repository
 
+import android.app.Application
 import android.util.Base64
 import android.util.Log
 import androidx.room.withTransaction
 import com.google.gson.GsonBuilder
 import com.nutrition.tracker.BuildConfig
+import com.nutrition.tracker.R
 import com.nutrition.tracker.data.api.*
 import com.nutrition.tracker.data.db.*
 import com.nutrition.tracker.data.model.FoodAnalysisResult
@@ -23,6 +25,7 @@ import java.time.format.DateTimeFormatter
 // Backend returns nutrients per 100g; the client scales them itself.
 class NutritionRepository(
     private val db: AppDatabase,
+    private val app: Application,
     private val backendApi: BackendApiService = ApiClient.backendApi,
     private val offApi: OpenFoodFactsApiService = ApiClient.openFoodFactsApi
 ) {
@@ -35,14 +38,14 @@ class NutritionRepository(
     // ─── Shared helper: unwrap Response or throw with the backend message ───
     private fun <T> unwrap(resp: retrofit2.Response<T>): T {
         if (resp.isSuccessful) {
-            return resp.body() ?: throw Exception("Пустой ответ сервера")
+            return resp.body() ?: throw Exception(app.getString(R.string.error_empty_server_response))
         }
         val errBody = resp.errorBody()?.string() ?: ""
         val msg = try {
             com.google.gson.JsonParser.parseString(errBody).asJsonObject
                 .get("message")?.asString
         } catch (e: Exception) { null }
-        throw Exception(msg ?: "Ошибка сервера ${resp.code()}")
+        throw Exception(msg ?: app.getString(R.string.error_server_code, resp.code()))
     }
 
     // --- User Profile ---
@@ -153,7 +156,7 @@ class NutritionRepository(
         val normalized = normalizeKey(keyOriginal)
         val normalizedEn = normalizeKey(keyEn)
         val existing = db.foodCacheDao().findByKeyEnNormalized(normalizedEn)
-        if (existing != null) throw Exception("Продукт с таким английским названием уже существует")
+        if (existing != null) throw Exception(app.getString(R.string.error_product_name_exists))
         db.foodCacheDao().insert(
             FoodCacheEntity(
                 keyOriginal = keyOriginal,
@@ -261,7 +264,7 @@ class NutritionRepository(
             )
             val backendResults = unwrap(resp).results
             if (backendResults.isEmpty() && cachedResults.isEmpty()) {
-                throw Exception("Не удалось распознать продукты из описания")
+                throw Exception(app.getString(R.string.error_no_products_in_description))
             }
             for (r in backendResults) {
                 // Local cache on the device by the entered name + English key.
@@ -280,7 +283,7 @@ class NutritionRepository(
         }
 
         if (results.isEmpty()) {
-            throw Exception("Не удалось получить данные о нутриентах для введённых продуктов")
+            throw Exception(app.getString(R.string.error_no_nutrients_data))
         }
         return results
     }
@@ -411,10 +414,15 @@ class NutritionRepository(
 
     // --- Food Entries write ---
     suspend fun addFoodEntry(foodName: String, weightGrams: Double, nutrients: NutrientData, source: String = "manual", fromCache: Boolean = false) {
+        addFoodEntry(todayDate(), foodName, "", weightGrams, nutrients, source, fromCache)
+    }
+
+    suspend fun addFoodEntry(date: String, foodName: String, foodNameEn: String = "", weightGrams: Double, nutrients: NutrientData, source: String = "manual", fromCache: Boolean = false) {
         db.foodEntryDao().insert(
             FoodEntryEntity(
-                date = todayDate(),
+                date = date,
                 foodName = foodName,
+                foodNameEn = foodNameEn,
                 weightGrams = weightGrams,
                 nutrientsJson = gson.toJson(nutrients),
                 source = source,

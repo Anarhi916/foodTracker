@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.util.Base64
 import com.google.gson.Gson
+import com.nutrition.tracker.R
 import com.nutrition.tracker.data.model.NutrientData
 
 /**
@@ -110,9 +111,9 @@ object FoodShare {
     fun shareViaSystem(context: Context, link: String, foodName: String) {
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
-            putExtra(Intent.EXTRA_TEXT, "Поделился блюдом «$foodName» в NutriTrack:\n$link")
+            putExtra(Intent.EXTRA_TEXT, context.getString(R.string.share_food_text, foodName, link))
         }
-        context.startActivity(Intent.createChooser(intent, "Поделиться блюдом"))
+        context.startActivity(Intent.createChooser(intent, context.getString(R.string.share_food_chooser)))
     }
 }
 

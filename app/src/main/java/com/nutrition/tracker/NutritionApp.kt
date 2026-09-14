@@ -28,9 +28,9 @@ class NutritionApp : Application() {
     override fun onCreate() {
         super.onCreate()
         val db = AppDatabase.getInstance(this)
-        repository = NutritionRepository(db)
+        repository = NutritionRepository(db, this)
         tokenStore = TokenStore(this)
-        authManager = AuthManager(tokenStore)
+        authManager = AuthManager(tokenStore, this)
         syncManager = SyncManager(this, repository, authManager)
 
         // Play Integrity: cloud project number from BuildConfig (0 = unconfigured → skipped).

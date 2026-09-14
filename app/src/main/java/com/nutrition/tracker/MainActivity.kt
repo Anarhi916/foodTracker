@@ -129,7 +129,7 @@ fun NutritionTrackerApp(intent: Intent? = null) {
                     mainViewModel.addManualCachedFood(food.nameRu, food.nameEn, food.nutrients) {}
                     importFood = null
                     importDone = true
-                }) { androidx.compose.material3.Text("Добавить в сохранённые") }
+                }) { androidx.compose.material3.Text(androidx.compose.ui.res.stringResource(com.nutrition.tracker.R.string.add_to_saved)) }
             },
             dismissButton = {
                 androidx.compose.material3.TextButton(onClick = { importFood = null; importDone = true }) {

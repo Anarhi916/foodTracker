@@ -2,10 +2,12 @@ package com.nutrition.tracker.data.auth
 
 import android.content.Context
 import android.util.Base64
+import android.util.Log
 import com.google.android.gms.common.ConnectionResult
 import com.google.android.gms.common.GoogleApiAvailability
 import com.google.android.gms.tasks.Tasks
 import com.google.android.play.core.integrity.IntegrityManagerFactory
+import com.google.android.play.core.integrity.IntegrityServiceException
 import com.google.android.play.core.integrity.StandardIntegrityManager.PrepareIntegrityTokenRequest
 import com.google.android.play.core.integrity.StandardIntegrityManager.StandardIntegrityToken
 import com.google.android.play.core.integrity.StandardIntegrityManager.StandardIntegrityTokenProvider
@@ -35,10 +37,13 @@ object IntegrityService {
     // The warm-up provider is expensive to create; cache it and rebuild only if it goes stale.
     @Volatile private var tokenProvider: StandardIntegrityTokenProvider? = null
     private val prepareLock = Any()
-    // Circuit breaker: skip prepareIntegrityToken for 60s after a failure to prevent
+    // Circuit breaker: skip prepareIntegrityToken for 5 min after a failure to prevent
     // repeated system dialogs when multiple requests fire concurrently on app open.
     @Volatile private var lastProviderFailureMs = 0L
-    private const val PROVIDER_FAILURE_COOLDOWN_MS = 60_000L
+    private const val PROVIDER_FAILURE_COOLDOWN_MS = 300_000L  // 5 minutes
+    // After 3 consecutive failures, disable for the whole session to avoid spamming dialogs.
+    @Volatile private var consecutiveFailures = 0
+    private const val MAX_CONSECUTIVE_FAILURES = 3
 
     fun init(context: Context, cloudProjectNumber: Long, deviceId: String) {
         appContext = context.applicationContext
@@ -72,7 +77,11 @@ object IntegrityService {
             }
         } catch (e: Exception) {
             tokenProvider = null
+            consecutiveFailures++
             lastProviderFailureMs = System.currentTimeMillis()
+            val code = (e.cause as? IntegrityServiceException)?.errorCode
+                ?: (e as? IntegrityServiceException)?.errorCode
+            Log.e("IntegrityService", "requestHeaders failed (#$consecutiveFailures): ${e::class.simpleName} errorCode=$code msg=${e.message}", e)
             null
         }
     }
@@ -81,9 +90,11 @@ object IntegrityService {
         tokenProvider?.let { return it }
         // Circuit breaker: if prepareIntegrityToken failed recently, skip to avoid
         // triggering the Play Integrity system dialog on every queued request.
+        if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) return null
         if (System.currentTimeMillis() - lastProviderFailureMs < PROVIDER_FAILURE_COOLDOWN_MS) return null
         synchronized(prepareLock) {
             tokenProvider?.let { return it }
+            if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) return null
             if (System.currentTimeMillis() - lastProviderFailureMs < PROVIDER_FAILURE_COOLDOWN_MS) return null
             val ctx = appContext ?: return null
             if (cloudProjectNumber == 0L) return null
@@ -102,10 +113,15 @@ object IntegrityService {
                     ),
                     15, TimeUnit.SECONDS
                 )
+                consecutiveFailures = 0
                 tokenProvider = prepared
                 prepared
             } catch (e: Exception) {
+                consecutiveFailures++
                 lastProviderFailureMs = System.currentTimeMillis()
+                val code = (e.cause as? IntegrityServiceException)?.errorCode
+                    ?: (e as? IntegrityServiceException)?.errorCode
+                Log.e("IntegrityService", "prepareIntegrityToken failed (#$consecutiveFailures): ${e::class.simpleName} errorCode=$code msg=${e.message}", e)
                 null
             }
         }

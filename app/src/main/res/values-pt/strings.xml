@@ -286,4 +286,13 @@
     <string name="height_ft_in">Altura (ft/in)</string>
     <string name="feet">Pés</string>
     <string name="inches">Polegadas</string>
+    <string name="error_sign_in_google">Falha ao entrar com o Google</string>
+    <string name="error_sign_in_apple">Falha ao entrar com a Apple</string>
+    <string name="error_empty_server_response">Resposta vazia do servidor</string>
+    <string name="error_server_code">Erro do servidor %1$d</string>
+    <string name="error_product_name_exists">Já existe um produto com este nome em inglês</string>
+    <string name="error_no_products_in_description">Não foi possível reconhecer produtos na descrição</string>
+    <string name="error_no_nutrients_data">Não foi possível obter dados nutricionais para os produtos inseridos</string>
+    <string name="share_food_text">Compartilhou o prato «%1$s» no NutriTrack:\n%2$s</string>
+    <string name="share_food_chooser">Compartilhar prato</string>
 </resources>

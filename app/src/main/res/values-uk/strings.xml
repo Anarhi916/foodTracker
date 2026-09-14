@@ -286,4 +286,13 @@
     <string name="height_ft_in">Зріст (фути/дюйми)</string>
     <string name="feet">Фути</string>
     <string name="inches">Дюйми</string>
+    <string name="error_sign_in_google">Не вдалося увійти через Google</string>
+    <string name="error_sign_in_apple">Не вдалося увійти через Apple</string>
+    <string name="error_empty_server_response">Порожня відповідь сервера</string>
+    <string name="error_server_code">Помилка сервера %1$d</string>
+    <string name="error_product_name_exists">Продукт із такою англійською назвою вже існує</string>
+    <string name="error_no_products_in_description">Не вдалося розпізнати продукти з опису</string>
+    <string name="error_no_nutrients_data">Не вдалося отримати дані про нутрієнти для введених продуктів</string>
+    <string name="share_food_text">Поділився стравою «%1$s» у NutriTrack:\n%2$s</string>
+    <string name="share_food_chooser">Поділитися стравою</string>
 </resources>

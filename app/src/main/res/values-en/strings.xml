@@ -286,4 +286,13 @@
     <string name="height_ft_in">Height (ft/in)</string>
     <string name="feet">Feet</string>
     <string name="inches">Inches</string>
+    <string name="error_sign_in_google">Failed to sign in with Google</string>
+    <string name="error_sign_in_apple">Failed to sign in with Apple</string>
+    <string name="error_empty_server_response">Empty server response</string>
+    <string name="error_server_code">Server error %1$d</string>
+    <string name="error_product_name_exists">A product with this English name already exists</string>
+    <string name="error_no_products_in_description">Could not recognize any products from the description</string>
+    <string name="error_no_nutrients_data">Could not get nutrient data for the entered products</string>
+    <string name="share_food_text">Shared the dish «%1$s» in NutriTrack:\n%2$s</string>
+    <string name="share_food_chooser">Share dish</string>
 </resources>

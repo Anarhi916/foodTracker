@@ -8,6 +8,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -383,6 +385,8 @@ private fun FoodInputSection(
 ) {
     var quickAddEntry by remember { mutableStateOf<FoodCacheEntity?>(null) }
     var quickAddWeight by remember { mutableStateOf("100") }
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
 
     // Quick-add weight dialog
     quickAddEntry?.let { entry ->
@@ -530,7 +534,11 @@ private fun FoodInputSection(
             Spacer(Modifier.height(8.dp))
 
             Button(
-                onClick = onAnalyze,
+                onClick = {
+                    focusManager.clearFocus()
+                    keyboardController?.hide()
+                    onAnalyze()
+                },
                 enabled = !isLoading && foodInput.isNotBlank(),
                 modifier = Modifier.fillMaxWidth()
             ) {

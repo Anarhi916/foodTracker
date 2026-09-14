@@ -229,6 +229,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.value = _uiState.value.copy(showEditDialog = false, editingEntry = null)
     }
 
+    fun getEntriesFlowForDate(date: String): Flow<List<FoodEntryEntity>> =
+        repo.getEntriesForDate(date).map { list -> list.filter { it.deletedAt == null } }
+
+    fun addFoodForDate(
+        name: String, weightGrams: Double, date: String,
+        cachedFood: FoodCacheEntity? = null,
+        onSuccess: () -> Unit = {},
+        onError: (String) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            try {
+                val nutrients = if (cachedFood != null) {
+                    repo.parseNutrients(cachedFood.nutrientsPer100gJson) * (weightGrams / 100.0)
+                } else {
+                    repo.analyzeSingleDish(name, weightGrams).nutrients
+                }
+                repo.addFoodEntry(date, name, "", weightGrams, nutrients, "manual")
+                onSuccess()
+            } catch (e: Exception) {
+                onError(e.message ?: "")
+            }
+        }
+    }
+
     // --- Barcode ---
     fun onBarcodeScanned(barcode: String) {
         // Check if the scanned code is actually a NutriTrack share QR — parse and import.

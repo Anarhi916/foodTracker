@@ -36,6 +36,7 @@
     <string name="fill_in_your_profile_and_tap_save_and_re">Заполните профиль и нажмите\n\"Сохранить и пересчитать\"</string>
     <string name="cancel">Отмена</string>
     <string name="save">Сохранить</string>
+    <string name="done">Готово</string>
     <string name="edit">Редактировать</string>
     <string name="macros_and_calories">БЖУ и Калории</string>
     <string name="vitamins">Витамины</string>
@@ -286,4 +287,13 @@
     <string name="height_ft_in">Рост (футы/дюймы)</string>
     <string name="feet">Футы</string>
     <string name="inches">Дюймы</string>
+    <string name="error_sign_in_google">Не удалось войти через Google</string>
+    <string name="error_sign_in_apple">Не удалось войти через Apple</string>
+    <string name="error_empty_server_response">Пустой ответ сервера</string>
+    <string name="error_server_code">Ошибка сервера %1$d</string>
+    <string name="error_product_name_exists">Продукт с таким английским названием уже существует</string>
+    <string name="error_no_products_in_description">Не удалось распознать продукты из описания</string>
+    <string name="error_no_nutrients_data">Не удалось получить данные о нутриентах для введённых продуктов</string>
+    <string name="share_food_text">Поделился блюдом «%1$s» в NutriTrack:\n%2$s</string>
+    <string name="share_food_chooser">Поделиться блюдом</string>
 </resources>

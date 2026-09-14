@@ -1,9 +1,11 @@
 package com.nutrition.tracker.data.auth
 
+import android.app.Application
 import android.content.Context
 import android.net.Uri
 import androidx.browser.customtabs.CustomTabsIntent
 import com.nutrition.tracker.BuildConfig
+import com.nutrition.tracker.R
 import com.nutrition.tracker.data.api.ApiClient
 import com.nutrition.tracker.data.api.GoogleCodeRequest
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -13,7 +15,8 @@ import java.security.SecureRandom
 import java.util.Base64
 
 class AuthManager(
-    private val tokenStore: TokenStore
+    private val tokenStore: TokenStore,
+    private val app: Application
 ) {
     private val _authState = MutableStateFlow(tokenStore.isSignedIn)
     val authState: StateFlow<Boolean> = _authState
@@ -105,14 +108,14 @@ class AuthManager(
             // CSRF: the state we generated must round-trip back unchanged.
             // A null/mismatched state means a stale or unsolicited redirect — stay silent.
             if (expectedState == null || frag["state"] != expectedState) return false
-            if (frag["error"] != null) { _errorMessage.value = "Не удалось войти через Apple"; return false }
+            if (frag["error"] != null) { _errorMessage.value = app.getString(R.string.error_sign_in_apple); return false }
             val access = frag["access"]
             val refresh = frag["refresh"]
             return if (!access.isNullOrBlank() && !refresh.isNullOrBlank()) {
                 tokenStore.save(access, refresh)
                 _authState.value = true
                 true
-            } else { _errorMessage.value = "Не удалось войти через Apple"; false }
+            } else { _errorMessage.value = app.getString(R.string.error_sign_in_apple); false }
         }
 
         // Google flow: we receive the auth code and exchange it via the backend (PKCE).
@@ -133,9 +136,9 @@ class AuthManager(
                 tokenStore.save(tokens.accessToken, tokens.refreshToken)
                 _authState.value = true
                 true
-            } else { _errorMessage.value = "Не удалось войти через Google"; false }
+            } else { _errorMessage.value = app.getString(R.string.error_sign_in_google); false }
         } catch (_: Exception) {
-            _errorMessage.value = "Не удалось войти через Google"
+            _errorMessage.value = app.getString(R.string.error_sign_in_google)
             false
         } finally {
             pendingNonce = null
