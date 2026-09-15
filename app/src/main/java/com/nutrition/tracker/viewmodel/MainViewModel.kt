@@ -20,6 +20,7 @@ data class MainUiState(
     val pendingFood: FoodAnalysisResult? = null,
     val pendingFoodOriginalInput: String = "",
     val pendingFoodWeight: Double = 0.0,
+    val pendingFoodWeightText: String = "",
     val pendingFoodSource: String = "manual",
     val showConfirmDialog: Boolean = false,
     val showEditDialog: Boolean = false,
@@ -124,11 +125,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (results.size == 1) {
                     // Single food — show confirm dialog
                     val result = results.first()
+                    val w = if (result.weightGrams > 0) result.weightGrams else extractWeight(input)
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
                         pendingFood = result,
                         pendingFoodOriginalInput = input,
-                        pendingFoodWeight = if (result.weightGrams > 0) result.weightGrams else extractWeight(input),
+                        pendingFoodWeight = w,
+                        pendingFoodWeightText = if (w % 1.0 == 0.0) w.toInt().toString() else w.toString(),
                         pendingFoodSource = "manual",
                         showConfirmDialog = true
                     )
@@ -171,7 +174,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             repo.addFoodEntry(
-                foodName = state.pendingFoodOriginalInput.ifBlank { food.foodName },
+                // Clean, weight-stripped name (matches the cache/quick-add path). The raw
+                // input still carries any inline weight the user typed (e.g. "картофель 20г"),
+                // which must NOT leak into the diary name — there's a separate Вес column.
+                foodName = food.foodName.ifBlank { state.pendingFoodOriginalInput },
                 weightGrams = newWeight,
                 nutrients = nutrients,
                 source = state.pendingFoodSource,
@@ -181,13 +187,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 showConfirmDialog = false,
                 pendingFood = null,
                 pendingFoodOriginalInput = "",
+                pendingFoodWeightText = "",
                 foodInput = ""
             )
         }
     }
 
     fun dismissConfirmDialog() {
-        _uiState.value = _uiState.value.copy(showConfirmDialog = false, pendingFood = null, pendingFoodOriginalInput = "")
+        _uiState.value = _uiState.value.copy(showConfirmDialog = false, pendingFood = null, pendingFoodOriginalInput = "", pendingFoodWeightText = "")
     }
 
     fun deleteEntry(entry: FoodEntryEntity) {
@@ -300,6 +307,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateBarcodeWeight(weight: String) {
         _uiState.value = _uiState.value.copy(barcodeWeight = weight)
+    }
+
+    /** Editable weight in the manual-entry confirm dialog (mirrors iOS's weight field). */
+    fun updatePendingFoodWeight(text: String) {
+        _uiState.value = _uiState.value.copy(
+            pendingFoodWeightText = text,
+            pendingFoodWeight = text.toDoubleOrNull() ?: 0.0
+        )
     }
 
     suspend fun lookupBarcodeForIngredient(barcode: String): Pair<String, com.nutrition.tracker.data.db.FoodCacheEntity?>? {

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Харчування</string>
+    <string name="app_name">NutritionTracker</string>
     <string name="account_deleted_title">Акаунт видалено</string>
     <string name="account_deleted_message">Ваш акаунт було видалено. Увійдіть знову, щоб продовжити.</string>
     <string name="delete_account">Видалити акаунт</string>
@@ -196,7 +196,7 @@
     <string name="profile_update_error">Помилка оновлення профілю: %1$s</string>
     <string name="couldn_t_recognize">Не вдалося розпізнати «%1$s»</string>
     <string name="couldn_t_recognize_1_2">Не вдалося розпізнати «%1$s»: %2$s</string>
-    <string name="sharing_the_dish_1_on_nutritrack_2">Ділюся стравою «%1$s» у NutriTrack:\n%2$s</string>
+    <string name="sharing_the_dish_1_on_nutritrack_2">Ділюся стравою «%1$s» у NutritionTracker:\n%2$s</string>
     <string name="oz">унц.</string>
     <string name="gram_short">г</string>
     <string name="kcal_short">ккал</string>
@@ -293,6 +293,9 @@
     <string name="error_product_name_exists">Продукт із такою англійською назвою вже існує</string>
     <string name="error_no_products_in_description">Не вдалося розпізнати продукти з опису</string>
     <string name="error_no_nutrients_data">Не вдалося отримати дані про нутрієнти для введених продуктів</string>
-    <string name="share_food_text">Поділився стравою «%1$s» у NutriTrack:\n%2$s</string>
+    <string name="share_food_text">Поділився стравою «%1$s» у NutritionTracker:\n%2$s</string>
     <string name="share_food_chooser">Поділитися стравою</string>
+    <string name="privacy_policy">Політика конфіденційності</string>
+    <string name="terms_of_service">Умови використання</string>
+    <string name="medical_disclaimer">Інформація про харчування та норми має довідковий характер, може бути неточною та не є медичною консультацією. Перед зміною раціону проконсультуйтеся з фахівцем.</string>
 </resources>

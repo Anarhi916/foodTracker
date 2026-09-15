@@ -47,9 +47,18 @@ fun MainScreen(
 
     // Confirmation dialog
     if (uiState.showConfirmDialog && uiState.pendingFood != null) {
+        val pf = uiState.pendingFood!!
+        // Show the editable weight field only for manual text entry — the barcode/photo
+        // flows already collect the weight in their own dialog beforehand.
+        val isManual = uiState.pendingFoodSource == "manual"
+        val displayNutrients = if (isManual && pf.weightGrams > 0 && uiState.pendingFoodWeight != pf.weightGrams)
+            pf.nutrients * (uiState.pendingFoodWeight / pf.weightGrams)
+        else pf.nutrients
         FoodConfirmationDialog(
-            foodName = uiState.pendingFood!!.foodName,
-            nutrients = uiState.pendingFood!!.nutrients,
+            foodName = pf.foodName,
+            nutrients = displayNutrients,
+            weight = if (isManual) uiState.pendingFoodWeightText else null,
+            onWeightChange = { viewModel.updatePendingFoodWeight(it) },
             onConfirm = { viewModel.confirmAddFood() },
             onDismiss = { viewModel.dismissConfirmDialog() }
         )

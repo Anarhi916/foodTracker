@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Ernährungstracker</string>
+    <string name="app_name">NutritionTracker</string>
     <string name="account_deleted_title">Konto gelöscht</string>
     <string name="account_deleted_message">Dein Konto wurde gelöscht. Melde dich erneut an, um fortzufahren.</string>
     <string name="delete_account">Konto löschen</string>
@@ -196,7 +196,7 @@
     <string name="profile_update_error">Fehler beim Aktualisieren des Profils: %1$s</string>
     <string name="couldn_t_recognize">„%1$s“ konnte nicht erkannt werden</string>
     <string name="couldn_t_recognize_1_2">„%1$s“ konnte nicht erkannt werden: %2$s</string>
-    <string name="sharing_the_dish_1_on_nutritrack_2">Ich teile das Gericht „%1$s“ in NutriTrack:\n%2$s</string>
+    <string name="sharing_the_dish_1_on_nutritrack_2">Ich teile das Gericht „%1$s“ in NutritionTracker:\n%2$s</string>
     <string name="oz">oz</string>
     <string name="gram_short">g</string>
     <string name="kcal_short">kcal</string>
@@ -293,6 +293,9 @@
     <string name="error_product_name_exists">Ein Produkt mit diesem englischen Namen existiert bereits</string>
     <string name="error_no_products_in_description">Keine Produkte in der Beschreibung erkannt</string>
     <string name="error_no_nutrients_data">Nährwertdaten für die eingegebenen Produkte konnten nicht abgerufen werden</string>
-    <string name="share_food_text">Hat das Gericht «%1$s» in NutriTrack geteilt:\n%2$s</string>
+    <string name="share_food_text">Hat das Gericht «%1$s» in NutritionTracker geteilt:\n%2$s</string>
     <string name="share_food_chooser">Gericht teilen</string>
+    <string name="privacy_policy">Datenschutzrichtlinie</string>
+    <string name="terms_of_service">Nutzungsbedingungen</string>
+    <string name="medical_disclaimer">Die Ernährungsangaben und Zielwerte dienen nur zur Orientierung, können ungenau sein und stellen keine medizinische Beratung dar. Konsultieren Sie vor einer Ernährungsumstellung eine Fachkraft.</string>
 </resources>

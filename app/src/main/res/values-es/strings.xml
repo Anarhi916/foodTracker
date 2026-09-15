@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Registro nutricional</string>
+    <string name="app_name">NutritionTracker</string>
     <string name="account_deleted_title">Cuenta eliminada</string>
     <string name="account_deleted_message">Tu cuenta ha sido eliminada. Inicia sesión de nuevo para continuar.</string>
     <string name="delete_account">Eliminar cuenta</string>
@@ -196,7 +196,7 @@
     <string name="profile_update_error">Error al actualizar el perfil: %1$s</string>
     <string name="couldn_t_recognize">No se pudo reconocer «%1$s»</string>
     <string name="couldn_t_recognize_1_2">No se pudo reconocer «%1$s»: %2$s</string>
-    <string name="sharing_the_dish_1_on_nutritrack_2">Comparto el plato «%1$s» en NutriTrack:\n%2$s</string>
+    <string name="sharing_the_dish_1_on_nutritrack_2">Comparto el plato «%1$s» en NutritionTracker:\n%2$s</string>
     <string name="oz">oz</string>
     <string name="gram_short">g</string>
     <string name="kcal_short">kcal</string>
@@ -293,6 +293,9 @@
     <string name="error_product_name_exists">Ya existe un producto con este nombre en inglés</string>
     <string name="error_no_products_in_description">No se pudieron reconocer productos en la descripción</string>
     <string name="error_no_nutrients_data">No se pudieron obtener datos nutricionales para los productos introducidos</string>
-    <string name="share_food_text">Compartió el plato «%1$s» en NutriTrack:\n%2$s</string>
+    <string name="share_food_text">Compartió el plato «%1$s» en NutritionTracker:\n%2$s</string>
     <string name="share_food_chooser">Compartir plato</string>
+    <string name="privacy_policy">Política de privacidad</string>
+    <string name="terms_of_service">Términos de servicio</string>
+    <string name="medical_disclaimer">La información nutricional y los objetivos son solo de referencia, pueden ser inexactos y no constituyen asesoramiento médico. Consulte a un profesional antes de cambiar su dieta.</string>
 </resources>

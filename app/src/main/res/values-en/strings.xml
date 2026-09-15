@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Nutrition Tracker</string>
+    <string name="app_name">NutritionTracker</string>
     <string name="account_deleted_title">Account deleted</string>
     <string name="account_deleted_message">Your account has been deleted. Sign in again to continue.</string>
     <string name="delete_account">Delete account</string>
@@ -196,7 +196,7 @@
     <string name="profile_update_error">Profile update error: %1$s</string>
     <string name="couldn_t_recognize">Couldn\'t recognize \"%1$s\"</string>
     <string name="couldn_t_recognize_1_2">Couldn\'t recognize \"%1$s\": %2$s</string>
-    <string name="sharing_the_dish_1_on_nutritrack_2">Sharing the dish \"%1$s\" on NutriTrack:\n%2$s</string>
+    <string name="sharing_the_dish_1_on_nutritrack_2">Sharing the dish \"%1$s\" on NutritionTracker:\n%2$s</string>
     <string name="oz">oz</string>
     <string name="gram_short">g</string>
     <string name="kcal_short">kcal</string>
@@ -293,6 +293,9 @@
     <string name="error_product_name_exists">A product with this English name already exists</string>
     <string name="error_no_products_in_description">Could not recognize any products from the description</string>
     <string name="error_no_nutrients_data">Could not get nutrient data for the entered products</string>
-    <string name="share_food_text">Shared the dish «%1$s» in NutriTrack:\n%2$s</string>
+    <string name="share_food_text">Shared the dish «%1$s» in NutritionTracker:\n%2$s</string>
     <string name="share_food_chooser">Share dish</string>
+    <string name="privacy_policy">Privacy Policy</string>
+    <string name="terms_of_service">Terms of Service</string>
+    <string name="medical_disclaimer">Nutrition information and targets are for reference only, may be inaccurate, and do not constitute medical advice. Consult a professional before changing your diet.</string>
 </resources>

@@ -22,6 +22,8 @@ import com.nutrition.tracker.util.WeightFormat
 fun FoodConfirmationDialog(
     foodName: String,
     nutrients: NutrientData,
+    weight: String? = null,
+    onWeightChange: (String) -> Unit = {},
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -40,6 +42,18 @@ fun FoodConfirmationDialog(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold
                 )
+                // Editable weight so the user can set/adjust the portion before adding
+                // (mirrors iOS's confirm sheet). Nutrients above are recomputed live by the caller.
+                if (weight != null) {
+                    OutlinedTextField(
+                        value = weight,
+                        onValueChange = onWeightChange,
+                        label = { Text(stringResource(R.string.weight_g)) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                    )
+                }
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
                 NutrientRow(stringResource(R.string.calories), "%.0f %s".format(nutrients.calories, stringResource(R.string.kcal_short)))
                 NutrientRow(stringResource(R.string.protein), "%.1f %s".format(nutrients.protein, stringResource(R.string.gram_short)))
