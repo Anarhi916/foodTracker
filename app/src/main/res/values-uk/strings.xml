@@ -298,4 +298,6 @@
     <string name="privacy_policy">Політика конфіденційності</string>
     <string name="terms_of_service">Умови використання</string>
     <string name="medical_disclaimer">Інформація про харчування та норми має довідковий характер, може бути неточною та не є медичною консультацією. Перед зміною раціону проконсультуйтеся з фахівцем.</string>
+    <string name="done">Готово</string>
+    <string name="import_macro_summary">%1$.0f ккал • Б %2$.1f г • Ж %3$.1f г • В %4$.1f г</string>
 </resources>

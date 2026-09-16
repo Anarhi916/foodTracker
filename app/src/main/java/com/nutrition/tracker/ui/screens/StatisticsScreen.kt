@@ -247,7 +247,7 @@ fun StatisticsScreen(
                                     )
                                     val csv = buildString {
                                         append("\uFEFF")
-                                        appendLine("Дата,Продукт,Вес (г)")
+                                        appendLine("Date,Product,Weight (g)")
                                         var lastDate = ""
                                         entries.sortedBy { it.date }.forEach { entry ->
                                             if (lastDate.isNotEmpty() && entry.date != lastDate) {

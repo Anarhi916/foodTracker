@@ -116,7 +116,8 @@ fun NutritionTrackerApp(intent: Intent? = null) {
                     )
                     androidx.compose.foundation.layout.Spacer(Modifier.height(8.dp))
                     androidx.compose.material3.Text(
-                        "%.0f ккал • Б %.1f г • Ж %.1f г • У %.1f г".format(
+                        androidx.compose.ui.res.stringResource(
+                            com.nutrition.tracker.R.string.import_macro_summary,
                             food.nutrients.calories, food.nutrients.protein,
                             food.nutrients.fat, food.nutrients.carbs
                         ),

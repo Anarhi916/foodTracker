@@ -298,4 +298,6 @@
     <string name="privacy_policy">Datenschutzrichtlinie</string>
     <string name="terms_of_service">Nutzungsbedingungen</string>
     <string name="medical_disclaimer">Die Ernährungsangaben und Zielwerte dienen nur zur Orientierung, können ungenau sein und stellen keine medizinische Beratung dar. Konsultieren Sie vor einer Ernährungsumstellung eine Fachkraft.</string>
+    <string name="done">Fertig</string>
+    <string name="import_macro_summary">%1$.0f kcal • E %2$.1f g • F %3$.1f g • K %4$.1f g</string>
 </resources>

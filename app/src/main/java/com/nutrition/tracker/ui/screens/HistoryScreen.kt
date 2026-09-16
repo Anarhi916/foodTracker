@@ -288,7 +288,7 @@ private fun HistoryDayCard(
                     NutrientProgressBar(stringResource(R.string.sat_fat), dayTotals.saturatedFat, norms.saturatedFat, stringResource(R.string.gram_short), upperRatio = 1.0)
                     NutrientProgressBar(stringResource(R.string.monounsat), dayTotals.monounsaturatedFat, norms.monounsaturatedFat, stringResource(R.string.gram_short), upperRatio = 3.0)
                     NutrientProgressBar(stringResource(R.string.polyunsat), dayTotals.polyunsaturatedFat, norms.polyunsaturatedFat, stringResource(R.string.gram_short), upperRatio = 3.0)
-                    NutrientProgressBar(stringResource(R.string.cholesterol), dayTotals.cholesterol, norms.cholesterol, stringResource(R.string.mg_short), upperRatio = 1.3)
+                    NutrientProgressBar(stringResource(R.string.cholesterol), dayTotals.cholesterol, norms.cholesterol, stringResource(R.string.mg_short), upperRatio = 1.3, showBar = false)
                 }
             }
 

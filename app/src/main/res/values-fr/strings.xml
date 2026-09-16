@@ -298,4 +298,6 @@
     <string name="privacy_policy">Politique de confidentialité</string>
     <string name="terms_of_service">Conditions d’utilisation</string>
     <string name="medical_disclaimer">Les informations nutritionnelles et les objectifs sont fournis à titre indicatif, peuvent être inexacts et ne constituent pas un avis médical. Consultez un professionnel avant de modifier votre alimentation.</string>
+    <string name="done">Terminé</string>
+    <string name="import_macro_summary">%1$.0f kcal • P %2$.1f g • L %3$.1f g • G %4$.1f g</string>
 </resources>

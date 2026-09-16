@@ -36,6 +36,10 @@ fun NutrientProgressBar(
     modifier: Modifier = Modifier,
     upperRatio: Double = 1.5,
     nutrientKey: String? = null,
+    // Cholesterol hides the colored bar: dietary cholesterol correlates weakly with blood
+    // cholesterol, so a permanently "over limit" bar is alarmist — we keep the fact/target
+    // numbers but drop the scary progress fill.
+    showBar: Boolean = true,
     onClick: (() -> Unit)? = null
 ) {
     if (target <= 0) return
@@ -87,13 +91,15 @@ fun NutrientProgressBar(
                 fontWeight = FontWeight.Medium
             )
         }
-        Spacer(Modifier.height(2.dp))
-        LinearProgressIndicator(
-            progress = { progress },
-            modifier = Modifier.fillMaxWidth().height(8.dp),
-            color = color,
-            trackColor = ProgressBackground,
-        )
+        if (showBar) {
+            Spacer(Modifier.height(2.dp))
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier.fillMaxWidth().height(8.dp),
+                color = color,
+                trackColor = ProgressBackground,
+            )
+        }
     }
 }
 
@@ -357,6 +363,7 @@ fun FatDetailsProgressSection(
                     name, value, normValue, "",
                     upperRatio = upperRatio,
                     nutrientKey = key,
+                    showBar = key != "cholesterol",
                     onClick = if (parseNutrients != null) {{ breakdownKey = name to key }} else null
                 )
             }
