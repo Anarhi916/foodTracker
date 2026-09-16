@@ -30,7 +30,7 @@ android {
         applicationId = "uk.nutritiontracker.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 28
+        versionCode = 29
         versionName = "1.0"
 
         // Backend proxy: AI/USDA keys moved to the server (see backend/ARCHITECTURE.md).

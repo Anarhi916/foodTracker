@@ -498,7 +498,7 @@ private fun FoodInputSection(
                             } catch (_: Exception) { NutrientData() }
                             Surface(
                                 onClick = {
-                                    quickAddWeight = "100"
+                                    quickAddWeight = ""   // start blank so the user types the weight (no need to clear a prefilled 100)
                                     quickAddEntry = entry
                                 },
                                 modifier = Modifier.fillMaxWidth()
