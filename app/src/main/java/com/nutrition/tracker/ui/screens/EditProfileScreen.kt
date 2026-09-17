@@ -557,7 +557,19 @@ private fun DailyNormsTab(viewModel: MainViewModel) {
 
             Spacer(Modifier.height(8.dp))
             NormSectionHeader(stringResource(R.string.minerals_and_trace_elements))
-            allNutrients.drop(18).forEach { (key, label, value) ->
+            allNutrients.drop(18).take(11).forEach { (key, label, value) ->
+                NormRow(
+                    label = stringResource(label),
+                    value = value,
+                    isEditing = isEditing,
+                    editValue = editedValues[key] ?: "",
+                    onEditValueChange = { editedValues = editedValues + (key to it) }
+                )
+            }
+
+            Spacer(Modifier.height(8.dp))
+            NormSectionHeader(stringResource(R.string.fats_details_3))
+            allNutrients.drop(29).forEach { (key, label, value) ->
                 NormRow(
                     label = stringResource(label),
                     value = value,

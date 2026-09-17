@@ -228,14 +228,12 @@ data class NutrientData(
         else -> this
     }
 
+    // Ordered as contiguous groups so the norms editor can slice it directly:
+    //   macros (5) -> vitamins (13) -> minerals (11) -> fat details (4).
     fun allNutrientsList(): List<Triple<String, Int, Double>> = listOf(
         Triple("calories", com.nutrition.tracker.R.string.calories_kcal, calories),
         Triple("protein", com.nutrition.tracker.R.string.protein_g, protein),
         Triple("fat", com.nutrition.tracker.R.string.fat_g, fat),
-        Triple("saturatedFat", com.nutrition.tracker.R.string.saturated_fat_g, saturatedFat),
-        Triple("monounsaturatedFat", com.nutrition.tracker.R.string.monounsaturated_fat_g, monounsaturatedFat),
-        Triple("polyunsaturatedFat", com.nutrition.tracker.R.string.polyunsaturated_fat_g, polyunsaturatedFat),
-        Triple("cholesterol", com.nutrition.tracker.R.string.cholesterol_mg, cholesterol),
         Triple("carbs", com.nutrition.tracker.R.string.carbs_g, carbs),
         Triple("fiber", com.nutrition.tracker.R.string.fiber_g, fiber),
         Triple("vitaminA", com.nutrition.tracker.R.string.vitamin_a_mcg, vitaminA),
@@ -261,7 +259,11 @@ data class NutrientData(
         Triple("copper", com.nutrition.tracker.R.string.copper_mg, copper),
         Triple("manganese", com.nutrition.tracker.R.string.manganese_mg, manganese),
         Triple("selenium", com.nutrition.tracker.R.string.selenium_mcg, selenium),
-        Triple("iodine", com.nutrition.tracker.R.string.iodine_mcg, iodine)
+        Triple("iodine", com.nutrition.tracker.R.string.iodine_mcg, iodine),
+        Triple("saturatedFat", com.nutrition.tracker.R.string.saturated_fat_g, saturatedFat),
+        Triple("monounsaturatedFat", com.nutrition.tracker.R.string.monounsaturated_fat_g, monounsaturatedFat),
+        Triple("polyunsaturatedFat", com.nutrition.tracker.R.string.polyunsaturated_fat_g, polyunsaturatedFat),
+        Triple("cholesterol", com.nutrition.tracker.R.string.cholesterol_mg, cholesterol)
     )
 }
 
