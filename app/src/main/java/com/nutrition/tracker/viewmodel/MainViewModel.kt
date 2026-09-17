@@ -288,7 +288,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         barcodeProductName = name,
                         barcodeNutrientsPer100g = enrichedPer100g,
                         showBarcodeWeightDialog = true,
-                        barcodeWeight = "100"
+                        barcodeWeight = ""   // start blank so the user types the weight (same as cache quick-add)
                     )
                 } else {
                     _uiState.value = _uiState.value.copy(
