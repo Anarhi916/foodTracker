@@ -6,11 +6,10 @@ import com.nutrition.tracker.data.auth.AuthManager
 import com.nutrition.tracker.data.repository.NutritionRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import java.time.LocalDate
 
 // Data synchronization between devices (see sync-architecture).
-// PULL: full on login (busy indicator) + 1/day silent on open.
-// PUSH: delta 1/day silent (only what changed since last_push_at).
+// PULL: full on login (busy indicator) + every 3h silent on open.
+// PUSH: delta every 3h silent (only what changed since last_push_at).
 class SyncManager(
     private val context: Context,
     private val repo: NutritionRepository,
@@ -56,20 +55,20 @@ class SyncManager(
         } catch (_: Exception) {
             // Silently — we'll enter the app with local data.
         } finally {
-            // Mark today's sync as done so the ON_RESUME dailySyncIfNeeded right after
+            // Mark the sync time so the ON_RESUME syncIfNeeded right after
             // login doesn't fire a duplicate pull/push.
-            prefs.edit { putString(KEY_LAST_DAILY, LocalDate.now().toString()) }
+            prefs.edit { putLong(KEY_LAST_SYNC, System.currentTimeMillis()) }
             _isInitialSyncing.value = false
         }
     }
 
-    /** Daily background sync — at most once a day. */
-    suspend fun dailySyncIfNeeded() {
+    /** Silent background sync — at most once per [SYNC_INTERVAL_MS] (3h). */
+    suspend fun syncIfNeeded() {
         if (!authManager.authState.value) return
-        val today = LocalDate.now().toString()
-        if (prefs.getString(KEY_LAST_DAILY, null) == today) return
+        val now = System.currentTimeMillis()
+        if (now - prefs.getLong(KEY_LAST_SYNC, 0) < SYNC_INTERVAL_MS) return
         val synced = backgroundSync()
-        if (synced) prefs.edit { putString(KEY_LAST_DAILY, today) }
+        if (synced) prefs.edit { putLong(KEY_LAST_SYNC, now) }
     }
 
     /** Push the delta, then pull the delta. Silently. Returns true if at least one succeeded. */
@@ -121,7 +120,10 @@ class SyncManager(
     companion object {
         private const val KEY_LAST_PUSH = "lastPushAt"
         private const val KEY_LAST_PULL = "lastPullAt"
-        private const val KEY_LAST_DAILY = "lastDailySyncDay"
+        private const val KEY_LAST_SYNC = "lastSyncAt"
         private const val KEY_MIGRATED = "initialMigrationDone"
+
+        /** Minimum gap between silent background syncs (was once/day → now every 3 hours). */
+        private const val SYNC_INTERVAL_MS = 3L * 60 * 60 * 1000
     }
 }

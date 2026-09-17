@@ -222,13 +222,13 @@ fun NutritionTrackerApp(intent: Intent? = null) {
         )
     }
 
-    // Silent daily sync when the app resumes.
+    // Silent 3-hourly sync when the app resumes.
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     LaunchedEffect(lifecycleOwner, isSignedIn) {
         lifecycleOwner.lifecycle.addObserver(
             androidx.lifecycle.LifecycleEventObserver { _, event ->
                 if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME && isSignedIn) {
-                    scope.launch { syncManager.dailySyncIfNeeded() }
+                    scope.launch { syncManager.syncIfNeeded() }
                 }
             }
         )
