@@ -192,12 +192,15 @@ fun NutritionTrackerApp(intent: Intent? = null) {
         }
     }
 
-    // Sign-out → full wipe of local data + state reset, then to Login.
-    // We also wipe on a regular sign-out (not just deletion): otherwise when ANOTHER account
-    // signs in, the previous user's data would show locally and get uploaded to the server via pullOnLogin(since=0).
+    // Signed-out transition → reset transient UI state and return to Login.
+    // We do NOT wipe local data here: this observer fires on ANY sign-out, including an
+    // INVOLUNTARY session expiry (token refresh failed) — wiping there would destroy a whole
+    // day of un-synced progress for a user who simply re-logs in. The destructive wipe lives
+    // only in the EXPLICIT paths: the sign-out button (EditProfileScreen) and delete-account
+    // (its own block + onDeleted), which is where cross-account leakage protection is needed.
+    // Mirrors iOS's reactive onChange(isSignedIn) branch (reset only, no wipe).
     LaunchedEffect(isSignedIn) {
         if (!isSignedIn && navController.currentDestination?.route != Screen.Login.route) {
-            app.repository.wipeAllLocalData()
             syncManager.resetOnSignOut()
             mainViewModel.resetTransientState()
             onboardingViewModel.reset()

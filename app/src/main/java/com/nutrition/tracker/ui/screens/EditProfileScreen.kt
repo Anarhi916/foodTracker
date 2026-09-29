@@ -84,6 +84,13 @@ fun EditProfileScreen(
                     }
                     IconButton(onClick = {
                         scope.launch {
+                            // Explicit sign-out wipes local data (cross-account protection): otherwise
+                            // when ANOTHER account signs in on this device the previous user's data would
+                            // show locally and get uploaded via pullOnLogin(since=0). Involuntary expiry
+                            // does NOT wipe (handled outside the reactive observer) so un-synced progress
+                            // survives a routine re-login. Mirrors the delete-account block below and iOS.
+                            app.repository.wipeAllLocalData()
+                            app.syncManager.resetOnSignOut()
                             authManager.signOut()
                             onBack()
                         }

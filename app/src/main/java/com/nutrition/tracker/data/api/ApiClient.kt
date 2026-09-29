@@ -81,9 +81,12 @@ object ApiClient {
         val store = tokenStore ?: return@Authenticator null
         if (isAuthPath(response.request)) return@Authenticator null      // don't refresh the auth requests themselves
         if (responseCount(response) >= 2) {
-            // We already retried once with a freshly refreshed token and STILL got 401 →
-            // the session is invalid server-side. Stop retrying and sign the user out.
-            onSessionExpired?.invoke()
+            // We already retried once with a freshly refreshed token and STILL got 401.
+            // If attestation is currently blocked (Play Integrity circuit breaker open), the
+            // retry rode WITHOUT an integrity token, so the prod backend rejects it — this is an
+            // attestation gap, NOT a dead session. Fail softly and keep the session; it recovers
+            // once attestation is available again. Otherwise the session is invalid → sign out.
+            if (!IntegrityService.attestationBlocked()) onSessionExpired?.invoke()
             return@Authenticator null
         }
         val refresh = store.refreshToken ?: run {
@@ -92,18 +95,26 @@ object ApiClient {
             return@Authenticator null
         }
 
-        val newAccess = synchronized(this) {
+        val newAccess: String = synchronized(this) {
             // Another thread may have already refreshed — check whether access changed.
             val current = store.accessToken
             val sentAccess = response.request.header("Authorization")?.removePrefix("Bearer ")
             if (current != null && current != sentAccess) {
                 current
             } else {
-                tryRefreshBlocking(refresh, store)
+                when (val result = tryRefreshBlocking(refresh, store)) {
+                    is RefreshResult.Refreshed -> result.accessToken
+                    // Server definitively rejected the refresh token (401/403) → session is dead.
+                    RefreshResult.Rejected -> {
+                        onSessionExpired?.invoke()
+                        return@Authenticator null
+                    }
+                    // Network error / timeout / 5xx: DON'T sign out — keep the session and just let
+                    // this request fail. The next resume/sync retries. A transient blip must never
+                    // cost the user their session (and, on a routine expiry, their un-synced data).
+                    RefreshResult.Transient -> return@Authenticator null
+                }
             }
-        } ?: run {
-            onSessionExpired?.invoke()
-            return@Authenticator null
         }
 
         response.request.newBuilder()
@@ -112,8 +123,16 @@ object ApiClient {
             .build()
     }
 
+    // Outcome of a refresh attempt — distinguishes a definitive rejection (sign out) from a
+    // transient failure (keep the session, retry later).
+    private sealed interface RefreshResult {
+        data class Refreshed(val accessToken: String) : RefreshResult
+        object Rejected : RefreshResult    // HTTP 401/403 — the refresh token is truly invalid
+        object Transient : RefreshResult   // network error / timeout / 5xx / malformed body
+    }
+
     // Synchronous refresh via a separate minimal client (no interceptors).
-    private fun tryRefreshBlocking(refresh: String, store: TokenStore): String? {
+    private fun tryRefreshBlocking(refresh: String, store: TokenStore): RefreshResult {
         return try {
             val body = gson.toJson(RefreshRequest(refresh))
             val client = OkHttpClient()
@@ -122,16 +141,28 @@ object ApiClient {
                 .post(body.toRequestBody("application/json".toMediaType()))
                 .build()
             client.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) return null
-                val tokens = gson.fromJson(resp.body?.string(), TokenResponse::class.java)
-                // Never clobber a good refresh token with a blank one — that would brick
-                // all future refreshes and force a re-login.
-                if (tokens.accessToken.isBlank() || tokens.refreshToken.isBlank()) return null
-                store.save(tokens.accessToken, tokens.refreshToken)
-                tokens.accessToken
+                when {
+                    // Only a definitive rejection kills the session.
+                    resp.code == 401 || resp.code == 403 -> RefreshResult.Rejected
+                    // 5xx / any other non-2xx → transient; keep the session.
+                    !resp.isSuccessful -> RefreshResult.Transient
+                    else -> {
+                        val tokens = gson.fromJson(resp.body?.string(), TokenResponse::class.java)
+                        // Never clobber a good refresh token with a blank one — that would brick
+                        // all future refreshes and force a re-login. A malformed/blank body is
+                        // treated as transient rather than a reason to sign out.
+                        if (tokens == null || tokens.accessToken.isBlank() || tokens.refreshToken.isBlank()) {
+                            RefreshResult.Transient
+                        } else {
+                            store.save(tokens.accessToken, tokens.refreshToken)
+                            RefreshResult.Refreshed(tokens.accessToken)
+                        }
+                    }
+                }
             }
         } catch (_: Exception) {
-            null
+            // Network error / timeout → keep the session, retry on the next attempt.
+            RefreshResult.Transient
         }
     }
 

@@ -54,6 +54,20 @@ object IntegrityService {
     fun deviceId(): String? = deviceId
 
     /**
+     * True when attestation IS configured for this build but is currently unable to mint a token —
+     * i.e. the circuit breaker is open (too many recent failures, or within the failure cooldown).
+     * Used by the auth layer to tell an attestation-gap 401 (do NOT sign out) apart from a genuine
+     * dead session: when this returns true, a protected 401 was almost certainly caused by the
+     * missing integrity token, not by an invalid session.
+     */
+    fun attestationBlocked(): Boolean {
+        if (cloudProjectNumber == 0L) return false          // attestation not required on this build
+        if (tokenProvider != null) return false             // a warm provider can still mint tokens
+        return consecutiveFailures >= MAX_CONSECUTIVE_FAILURES ||
+            System.currentTimeMillis() - lastProviderFailureMs < PROVIDER_FAILURE_COOLDOWN_MS
+    }
+
+    /**
      * Attestation headers for a protected request, or null if unavailable (best-effort).
      * BLOCKING (network + Play services) — must be called off the main thread. OkHttp
      * interceptor/authenticator threads are fine.
